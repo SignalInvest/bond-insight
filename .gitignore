@@ -1,25 +1,51 @@
-# Environment / secrets
+# =========================
+# Environment / Secrets
+# =========================
+
 .env
 .env.*
 !.env.example
 
+
+# =========================
 # Python
+# =========================
+
 __pycache__/
 *.py[cod]
+
 .venv/
 venv/
 
-# Jupyter
+
+# =========================
+# Jupyter Notebook
+# =========================
+
 .ipynb_checkpoints/
 
-# OS / IDE
+
+# =========================
+# IDE / OS
+# =========================
+
+.vscode/
 .DS_Store
 Thumbs.db
-.vscode/
 
-# Raw/private data
-# API에서 재수집 가능한 원본 데이터가 크다면 아래 주석을 해제하세요.
+
+# =========================
+# Raw Data
+# =========================
+
+# API에서 다시 수집할 수 있는 대용량 Raw CSV는
+# 필요할 경우 아래 주석을 해제하여 Git 추적에서 제외한다.
+
 # data/raw/**/*.csv
 
-# Tableau temporary files
+
+# =========================
+# Tableau
+# =========================
+
 *.tmp
