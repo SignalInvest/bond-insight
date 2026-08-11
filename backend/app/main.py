@@ -2,16 +2,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.health import router as health_router
+from backend.app.config import settings
 
 
 app = FastAPI(
-    title="Bond Insight API",
+    title=settings.app_name,
     description="Bond Insight Backend API",
-    version="0.1.0",
+    version=settings.app_version,
 )
 
 
-# Frontend CORS 설정
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -26,13 +26,12 @@ app.add_middleware(
 )
 
 
-# Router 등록
 app.include_router(health_router)
 
 
 @app.get("/")
 def root():
     return {
-        "service": "Bond Insight API",
+        "service": settings.app_name,
         "status": "running"
     }
