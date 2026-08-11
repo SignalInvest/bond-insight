@@ -4,6 +4,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.api.health import router as health_router
 from backend.app.config import settings
 
+from backend.app.api.database import router as database_router
+from backend.app.api.bonds import router as bonds_router
+from backend.app.api.compare import router as compare_router
+from backend.app.api.market import router as market_router
+
 
 app = FastAPI(
     title=settings.app_name,
@@ -27,6 +32,10 @@ app.add_middleware(
 
 
 app.include_router(health_router)
+app.include_router(database_router)
+app.include_router(market_router)
+app.include_router(compare_router)
+app.include_router(bonds_router)
 
 
 @app.get("/")
