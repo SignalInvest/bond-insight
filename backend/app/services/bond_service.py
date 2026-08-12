@@ -14,10 +14,13 @@ def list_bonds(
     page: int,
     page_size: int,
     search: str | None = None,
+    issuer: str | None = None,
     bond_type: str | None = None,
     rating: str | None = None,
     min_coupon: float | None = None,
     max_coupon: float | None = None,
+    maturity_from: str | None = None,
+    maturity_to: str | None = None,
     sort_by: str = "bond_name",
     sort_order: str = "asc",
 ) -> dict[str, Any]:
@@ -26,8 +29,10 @@ def list_bonds(
     if search:
         safe_search = search.replace(",", " ").strip()
         query = query.or_(
-            f"bond_name.ilike.%{safe_search}%,isin_code.ilike.%{safe_search}%"
+            f"bond_name.ilike.%{safe_search}%,issuer_name.ilike.%{safe_search}%,isin_code.ilike.%{safe_search}%"
         )
+    if issuer:
+        query = query.eq("issuer_name", issuer)
     if bond_type:
         query = query.eq("bond_type", bond_type)
     if rating:
@@ -36,6 +41,10 @@ def list_bonds(
         query = query.gte("coupon_rate", min_coupon)
     if max_coupon is not None:
         query = query.lte("coupon_rate", max_coupon)
+    if maturity_from is not None:
+        query = query.gte("maturity_date", maturity_from)
+    if maturity_to is not None:
+        query = query.lte("maturity_date", maturity_to)
 
     start = (page - 1) * page_size
     response = (
@@ -63,7 +72,20 @@ def get_bond(db: Client, isin_code: str) -> dict[str, Any] | None:
         .limit(1)
         .execute()
     )
-    return response.data[0] if response.data else None
+    if not response.data:
+        return None
+    bond = response.data[0]
+    market = (
+        db.table("bond_market").select("*").eq("isin_code", isin_code)
+        .order("reference_date", desc=True).limit(1).execute().data
+    )
+    metrics = (
+        db.table("bond_metrics").select("*").eq("isin_code", isin_code).limit(1).execute().data
+    )
+    return bond | {
+        "market": market[0] if market else None,
+        "metrics": metrics[0] if metrics else None,
+    }
 
 
 def compare_bonds(db: Client, isin_codes: list[str]) -> list[dict[str, Any]]:

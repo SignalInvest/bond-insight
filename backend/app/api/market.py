@@ -23,4 +23,4 @@ def market_overview(
         data = get_market_rates(db, start_date=start_date, end_date=end_date, limit=limit)
         return {"count": len(data), "latest": data[0] if data else None, "data": data}
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"Market data query failed: {exc}") from exc
+        raise HTTPException(status_code=503, detail="Market data service is temporarily unavailable") from exc
