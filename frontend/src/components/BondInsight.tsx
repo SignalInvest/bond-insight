@@ -34,16 +34,38 @@ interface BondInsightDerivedRow {
   relative_yield_spread: string;
 }
 
+// backend/app/services/bond_service.py get_bond()의 응답 형태
+interface BackendBond {
+  isin_code: string;
+  bond_name: string;
+  market: {
+    reference_date: string;
+    close_price: number | null;
+    ytm: number | null;
+    volume: number | null;
+    trading_value: number | null;
+    benchmark_treasury_rate: number | null;
+    credit_spread: number | null;
+  } | null;
+  metrics: {
+    reference_date: string;
+    macaulay_duration: number | null;
+    modified_duration: number | null;
+    duration_status: string | null;
+  } | null;
+}
+
 interface BondInsightApiResponse {
   found: boolean;
+  isin?: string;
+  backendAvailable?: boolean;
   base?: BondInsightBaseRow;
   derived?: BondInsightDerivedRow | null;
+  backend?: BackendBond | null;
 }
 
 // Bond Screener(Tableau, yunseo_3h48m)의 실제 컬럼명 기준 (2026-08-12 확인):
 // 채권명 / 발행사 / 유형 / 신용등급 / 잔존만기 / YTM(수익률) / 현재가
-// Duration·거래량 같은 파생지표 계산용 컬럼은 Tableau가 아니라 yunseo/output CSV(기본 데이터.csv,
-// 파생 데이터.csv)에 있어서, 채권명으로 그 CSV를 조회하는 /api/bond-insight를 통해 가져온다.
 const FIELD_CANDIDATES = {
   bondName: ["채권명", "Bond Name", "bond_name"],
   ytm: ["YTM", "수익률", "ytm"],
@@ -87,7 +109,54 @@ async function fetchBondInsight(bondName: string): Promise<BondInsightApiRespons
   return (await response.json()) as BondInsightApiResponse;
 }
 
-/** yunseo/output CSV에서 이 채권을 찾은 경우 — 실제 계산된 값 사용. */
+/** 1순위: 백엔드(FastAPI + Supabase, /api/bonds/{isin})의 공식 계산값. */
+function buildMetricsFromBackend(bond: BackendBond): InsightMetric[] {
+  const market = bond.market;
+  const metrics = bond.metrics;
+  const ytm = market?.ytm ?? null;
+  const tradingValue = market?.trading_value ?? null;
+  const volume = market?.volume ?? null;
+  const creditSpread = market?.credit_spread ?? null;
+  const modifiedDuration = metrics?.modified_duration ?? null;
+
+  return [
+    {
+      label: "오늘 거래량 (유동성)",
+      value: tradingValue !== null ? formatKoreanNumber(tradingValue, "원") : "데이터 없음",
+      caption:
+        volume !== null && market
+          ? `${formatKoreanNumber(volume, "좌")} 체결 · ${market.reference_date} 기준 (Supabase)`
+          : "Supabase에 거래 데이터가 없어요",
+      icon: Activity,
+    },
+    {
+      label: "실질수익률 (세후)",
+      value: ytm !== null ? `${(ytm * (1 - WITHHOLDING_TAX_RATE)).toFixed(2)}%` : "데이터 없음",
+      caption: ytm !== null ? `세전 YTM ${ytm}% × (1 − 이자소득세 15.4%)` : "YTM 데이터가 없어요",
+      icon: Percent,
+    },
+    {
+      label: "신용 스프레드",
+      value:
+        creditSpread !== null ? `${creditSpread >= 0 ? "+" : ""}${(creditSpread * 100).toFixed(0)}bp` : "데이터 없음",
+      caption: creditSpread !== null ? "YTM − 잔존만기 보간 국고채 금리 (Supabase 계산값)" : "벤치마크 금리를 찾지 못했어요",
+      icon: ShieldAlert,
+    },
+    {
+      label: "Duration (금리 민감도)",
+      value: modifiedDuration !== null ? modifiedDuration.toFixed(2) : "데이터 없음",
+      caption:
+        modifiedDuration !== null
+          ? `금리 1%p 오르면 가격 약 -${modifiedDuration.toFixed(2)}% 변동 (Supabase 계산값)`
+          : metrics?.duration_status
+            ? `계산 제외 사유: ${metrics.duration_status}`
+            : "Duration 데이터가 없어요",
+      icon: LineChart,
+    },
+  ];
+}
+
+/** 2순위: 백엔드 서버가 꺼져 있을 때 — yunseo/output 로컬 CSV 값. */
 function buildMetricsFromCsv(base: BondInsightBaseRow, derived: BondInsightDerivedRow | null): InsightMetric[] {
   const ytm = parseNullableFloat(base.ytm);
   const tradingValue = parseNullableFloat(base.trading_value);
@@ -107,7 +176,9 @@ function buildMetricsFromCsv(base: BondInsightBaseRow, derived: BondInsightDeriv
       label: "오늘 거래량 (유동성)",
       value: tradingValue !== null ? formatKoreanNumber(tradingValue, "원") : "데이터 없음",
       caption:
-        volume !== null ? `${formatKoreanNumber(volume, "좌")} 체결 · ${base.date} 기준` : `${base.date} 기준`,
+        volume !== null
+          ? `${formatKoreanNumber(volume, "좌")} 체결 · ${base.date} 기준 (백엔드 서버 꺼짐, 로컬 값)`
+          : `${base.date} 기준 (백엔드 서버 꺼짐, 로컬 값)`,
       icon: Activity,
     },
     {
@@ -120,7 +191,7 @@ function buildMetricsFromCsv(base: BondInsightBaseRow, derived: BondInsightDeriv
       label: "신용 스프레드",
       value:
         relativeSpread !== null ? `${relativeSpread >= 0 ? "+" : ""}${(relativeSpread * 100).toFixed(0)}bp` : "데이터 없음",
-      caption: relativeSpread !== null ? "YTM − 잔존만기와 가장 가까운 국고채 금리" : unavailableReason,
+      caption: relativeSpread !== null ? "YTM − 잔존만기와 가장 가까운 국고채 금리 (로컬 계산)" : unavailableReason,
       icon: ShieldAlert,
     },
     {
@@ -128,27 +199,27 @@ function buildMetricsFromCsv(base: BondInsightBaseRow, derived: BondInsightDeriv
       value: modifiedDuration !== null ? modifiedDuration.toFixed(2) : "데이터 없음",
       caption:
         modifiedDuration !== null
-          ? `금리 1%p 오르면 가격 약 -${modifiedDuration.toFixed(2)}% 변동 (Modified Duration)`
+          ? `금리 1%p 오르면 가격 약 -${modifiedDuration.toFixed(2)}% 변동 (로컬 계산)`
           : unavailableReason,
       icon: LineChart,
     },
   ];
 }
 
-/** CSV에서 못 찾았을 때의 대체값 — Tableau에는 YTM·잔존만기만 있어서 실질수익률만 계산 가능. */
+/** 3순위: yunseo CSV에도 없을 때 — Tableau의 YTM만으로 계산 가능한 것만. */
 function buildFallbackMetrics(fields: Record<string, string>): InsightMetric[] {
   const ytm = parsePercent(pickField(fields, FIELD_CANDIDATES.ytm));
 
   return [
-    { label: "오늘 거래량 (유동성)", value: "데이터 없음", caption: "yunseo 데이터에서 이 채권을 찾지 못했어요", icon: Activity },
+    { label: "오늘 거래량 (유동성)", value: "데이터 없음", caption: "이 채권을 찾지 못했어요", icon: Activity },
     {
       label: "실질수익률 (세후)",
       value: ytm !== null ? `${(ytm * (1 - WITHHOLDING_TAX_RATE)).toFixed(2)}%` : "데이터 없음",
       caption: ytm !== null ? `세전 YTM ${ytm}% × (1 − 이자소득세 15.4%)` : "YTM 필드를 찾지 못했어요",
       icon: Percent,
     },
-    { label: "신용 스프레드", value: "데이터 없음", caption: "yunseo 데이터에서 이 채권을 찾지 못했어요", icon: ShieldAlert },
-    { label: "Duration (금리 민감도)", value: "데이터 없음", caption: "yunseo 데이터에서 이 채권을 찾지 못했어요", icon: LineChart },
+    { label: "신용 스프레드", value: "데이터 없음", caption: "이 채권을 찾지 못했어요", icon: ShieldAlert },
+    { label: "Duration (금리 민감도)", value: "데이터 없음", caption: "이 채권을 찾지 못했어요", icon: LineChart },
   ];
 }
 
@@ -169,7 +240,14 @@ const LOADING_METRICS: InsightMetric[] = [
 type RemoteState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "found"; base: BondInsightBaseRow; derived: BondInsightDerivedRow | null }
+  | {
+      status: "found";
+      isin: string;
+      backendAvailable: boolean;
+      base: BondInsightBaseRow;
+      derived: BondInsightDerivedRow | null;
+      backend: BackendBond | null;
+    }
   | { status: "not-found" }
   | { status: "error" };
 
@@ -193,8 +271,15 @@ export function BondInsight({ selectedFields }: BondInsightProps) {
     fetchBondInsight(bondName)
       .then((data) => {
         if (cancelled) return;
-        if (data.found && data.base) {
-          setRemote({ status: "found", base: data.base, derived: data.derived ?? null });
+        if (data.found && data.base && data.isin) {
+          setRemote({
+            status: "found",
+            isin: data.isin,
+            backendAvailable: data.backendAvailable ?? false,
+            base: data.base,
+            derived: data.derived ?? null,
+            backend: data.backend ?? null,
+          });
         } else {
           setRemote({ status: "not-found" });
         }
@@ -211,10 +296,12 @@ export function BondInsight({ selectedFields }: BondInsightProps) {
   const metrics = !selectedFields
     ? PLACEHOLDER_METRICS
     : remote.status === "found"
-      ? buildMetricsFromCsv(remote.base, remote.derived)
+      ? remote.backendAvailable && remote.backend
+        ? buildMetricsFromBackend(remote.backend)
+        : buildMetricsFromCsv(remote.base, remote.derived)
       : remote.status === "loading"
         ? LOADING_METRICS
-        : buildFallbackMetrics(selectedFields);
+        : buildFallbackMetrics(selectedFields ?? {});
 
   return (
     <section
@@ -237,7 +324,7 @@ export function BondInsight({ selectedFields }: BondInsightProps) {
         ) : remote.status === "found" ? (
           <span>
             선택한 채권 <span className="font-semibold text-navy-800">{bondName}</span> ·{" "}
-            {remote.base.date} 스냅샷 기준
+            {remote.backendAvailable ? "Supabase 데이터" : "로컬 데이터 (백엔드 서버를 켜면 공식 값으로 바뀌어요)"}
           </span>
         ) : (
           <span>
