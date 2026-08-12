@@ -23,7 +23,7 @@ export function BondScreener({ onSelectBond }: BondScreenerProps) {
 
       <TableauEmbed
         src={TABLEAU_VIEW_URL}
-        className="min-h-[420px] w-full overflow-hidden rounded-xl"
+        className="w-full min-w-0 rounded-xl"
         onMarkSelectionChange={onSelectBond}
       />
     </section>

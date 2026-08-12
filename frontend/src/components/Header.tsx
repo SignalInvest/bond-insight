@@ -5,7 +5,7 @@ const REFERENCE_DATE = "2026.08.07";
 export function Header() {
   return (
     <header className="bg-navy-900 text-cream-50">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
+      <div className="mx-auto flex max-w-[1300px] items-center justify-between gap-4 px-6 py-4">
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-full border border-gold-500 text-gold-400">
             <Landmark size={20} />

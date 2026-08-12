@@ -50,14 +50,35 @@ function extractSelectedFields(marksData: TableauMarksDataTable | undefined): Re
   return fields;
 }
 
+/** Tableau URL 쿼리는 `:device=desktop`처럼 콜론이 인코딩되면 안 돼서 URLSearchParams 대신 직접 이어붙임. */
+function withDesktopDeviceParam(src: string, device: "desktop" | "tablet" | "phone"): string {
+  const separator = src.includes("?") ? "&" : "?";
+  return `${src}${separator}:device=${device}`;
+}
+
 interface TableauEmbedProps {
   src: string;
   className?: string;
   /** 태블로에서 행(마크)을 선택/해제할 때 호출. 선택 해제 시 null. */
   onMarkSelectionChange?: (fields: Record<string, string> | null) => void;
+  /**
+   * 뷰포트가 좁아도 Tableau가 모바일(세로 버튼) 레이아웃으로 자동 전환하지 않도록 강제.
+   * 기본값 desktop — Bond Screener 필터 버튼 7개가 한 줄로 나오려면 이게 꼭 필요함.
+   */
+  device?: "desktop" | "tablet" | "phone";
+  /** Tableau Desktop 원본 대시보드 기준 크기(px). 이보다 좁은 화면에서는 부모가 가로 스크롤 처리. */
+  width?: number;
+  height?: number;
 }
 
-export function TableauEmbed({ src, className, onMarkSelectionChange }: TableauEmbedProps) {
+export function TableauEmbed({
+  src,
+  className,
+  onMarkSelectionChange,
+  device = "desktop",
+  width = 1200,
+  height = 700,
+}: TableauEmbedProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -69,11 +90,13 @@ export function TableauEmbed({ src, className, onMarkSelectionChange }: TableauE
 
         containerRef.current.innerHTML = "";
         const viz = document.createElement("tableau-viz");
-        viz.setAttribute("src", src);
+        viz.setAttribute("src", withDesktopDeviceParam(src, device));
         viz.setAttribute("toolbar", "bottom");
         viz.setAttribute("hide-tabs", "");
-        viz.style.width = "100%";
-        viz.style.height = "100%";
+        // <tableau-viz>가 공식 지원하는 디바이스 강제 속성 (URL 파라미터와 이중 보장).
+        viz.setAttribute("device", device);
+        viz.style.width = `${width}px`;
+        viz.style.height = `${height}px`;
         viz.style.display = "block";
 
         viz.addEventListener(TableauEventType.MarkSelectionChanged, (event) => {
@@ -98,7 +121,15 @@ export function TableauEmbed({ src, className, onMarkSelectionChange }: TableauE
     return () => {
       cancelled = true;
     };
-  }, [src, onMarkSelectionChange]);
+  }, [src, onMarkSelectionChange, device, width, height]);
 
-  return <div ref={containerRef} className={className} />;
+  // 부모 폭이 1200px보다 좁으면 대시보드를 찌그러뜨리는 대신 가로 스크롤을 보여준다
+  // (요구사항 4, 5) — 실제 크기는 안쪽 <tableau-viz>에 고정 width/height로 부여됨.
+  return (
+    <div
+      ref={containerRef}
+      className={className}
+      style={{ width: "100%", minWidth: 0, overflowX: "auto" }}
+    />
+  );
 }
