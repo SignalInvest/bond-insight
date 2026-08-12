@@ -19,5 +19,13 @@ class Settings:
     gemini_api_key: str | None = os.getenv("GEMINI_API_KEY")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
+    # 로컬 개발 기본값 유지, 배포 시 실제 프론트 도메인을 콤마로 구분해 환경변수로 지정
+    # 예: ALLOWED_ORIGINS=https://bond-insight.vercel.app,https://bond-insight.example.com
+    allowed_origins: list[str] = [
+        origin.strip()
+        for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+        if origin.strip()
+    ]
+
 
 settings = Settings()
