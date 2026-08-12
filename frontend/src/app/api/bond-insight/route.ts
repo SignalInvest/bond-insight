@@ -5,12 +5,17 @@ import { NextResponse } from "next/server";
 
 // Tableau(yunseo_3h48m)의 채권명 표기가 Supabase `bonds.bond_name`과 달라서(예:
 // "국고01875-5103(21-2)" vs "국고채권 01875-5103(21-2)") 이름으로 바로 백엔드를 조회할 수 없다.
-// 그래서 yunseo/output/기본 데이터.csv에서 같은 채권명으로 ISIN을 먼저 찾고, 그 ISIN으로
-// 진짜 백엔드(FastAPI + Supabase, /api/bonds/{isin})를 조회하는 다리 역할만 한다.
+// 그래서 이 채권명으로 ISIN을 먼저 찾고, 그 ISIN으로 진짜 백엔드(FastAPI + Supabase,
+// /api/bonds/{isin})를 조회하는 다리 역할만 한다.
 // Supabase는 이미 2026-08-12에 전체 채권 업로드가 끝나 있음 (docs/SKILL.md 참고).
-const YUNSEO_OUTPUT_DIR = path.join(process.cwd(), "..", "yunseo", "output");
-const BASE_DATA_CSV = path.join(YUNSEO_OUTPUT_DIR, "기본 데이터.csv");
-const DERIVED_DATA_CSV = path.join(YUNSEO_OUTPUT_DIR, "파생 데이터.csv");
+//
+// CSV는 원래 yunseo/output/(레포 루트, frontend 밖)에 있었는데, Vercel은 보통
+// frontend/ 디렉터리만 배포 대상으로 삼아서 그 경로가 배포 환경엔 없다. 그래서
+// frontend/src/data/로 복사해와 프론트 배포판에 함께 번들되게 함 — 원본이 바뀌면
+// 이 사본도 다시 복사해야 한다 (docs/SKILL.md 참고).
+const DATA_DIR = path.join(process.cwd(), "src", "data");
+const BASE_DATA_CSV = path.join(DATA_DIR, "기본 데이터.csv");
+const DERIVED_DATA_CSV = path.join(DATA_DIR, "파생 데이터.csv");
 
 const BACKEND_API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 

@@ -138,7 +138,34 @@ frontend/src/
 ## 4. 다음에 다시 정할 것들 (지금은 보류)
 
 - **로컬 개발 시 FastAPI 백엔드를 매번 켜야 하는 번거로움** — `uvicorn backend.app.main:app --port 8000`을 수동으로 켜야 Bond Insight/Market Overview가 진짜 값을 보여줌. 스크립트나 `concurrently` 같은 걸로 프론트+백엔드 동시 실행을 편하게 만들지 검토
-- `frontend/src/app/api/bond-insight/route.ts`가 `yunseo/output` 로컬 CSV를 읽는 부분 — yunseo가 CSV를 다시 만들면 이 라우트도 다시 확인 필요 (경로가 고정되어 있음)
+- ~~`frontend/src/app/api/bond-insight/route.ts`가 `yunseo/output` 로컬 CSV를 읽는 부분~~ → 5절 배포 준비하면서 `frontend/src/data/`로 CSV를 복사해오는 방식으로 해결함. **yunseo가 CSV를 다시 만들면 `frontend/src/data/`의 사본도 같이 다시 복사해야 함** (자동 동기화 안 됨 — 잊기 쉬우니 주의)
 - 채권 상세·비교 화면이 필요해지면, 그때 페이지 분리 여부를 다시 논의 (1-1의 "일단 뺐다"는 결정은 최종이 아니라 이번 범위 한정)
 - GitHub 이슈(#11~#19)를 이 구현 결과에 맞게 다시 정리할지, 아니면 완전히 새 이슈로 대체할지
 - Bond Screener를 계속 Tableau 임베드로 둘지, 아니면 자체 React 구현으로 바꿔서 우리 백엔드와 연결할지 (1-9 참고, 지금은 연결 안 하기로 확정)
+
+---
+
+## 5. 배포 (2026-08-12)
+
+| 구성요소 | 플랫폼 | URL | 배포 브랜치 |
+| --- | --- | --- | --- |
+| Backend (FastAPI) | Render | `https://bond-insight-backend.onrender.com` | `feature/yunseo` (main 아님, PR 시도했으나 organization 접근 문제로 보류) |
+| Frontend (Next.js) | Vercel | `https://frontend-sigma-gold-68.vercel.app` | `feature/yunseo` |
+
+### 5-1. 배포 전 반드시 고쳐야 했던 것들
+
+- **CORS**: `backend/app/main.py`가 `localhost`만 하드코딩되어 있어서, `ALLOWED_ORIGINS` 환경변수(콤마 구분)로 뺌 (`backend/app/config.py`). Render 환경변수에 실제 Vercel 도메인을 넣어야 브라우저에서 `/api/market` 같은 걸 직접 호출하는 Market Overview가 안 막힘. **주의**: Render Blueprint(`render.yaml`)로 배포했는데도 `ALLOWED_ORIGINS`가 자동으로 안 채워져서 수동으로 추가해야 했음 — Render 콘솔에서 `sync: false` 환경변수가 항상 자동으로 프롬프트되는 건 아닌 듯.
+- **`/api/bond-insight`의 로컬 파일 의존**: 원래 `yunseo/output/*.csv`(레포 루트, `frontend/` 밖)를 읽었는데, Vercel은 `frontend/` 디렉터리만 배포 대상으로 삼아서 그 경로가 배포 환경엔 없었음. CSV 2개(`기본 데이터.csv`, `파생 데이터.csv`)를 `frontend/src/data/`로 복사해오고, `route.ts`가 `process.cwd()/src/data/`를 읽도록 수정. `next start`(프로덕션 빌드)로 로컬에서 먼저 검증 후 배포함.
+- **Vercel 프로젝트의 Output Directory 오설정**: 기존에 연결된 Vercel 프로젝트(`yunseo5/frontend`)의 Output Directory가 `dist`로 잡혀 있어서(다른 프레임워크로 설정됐던 흔적으로 추정) 첫 배포가 실패함. `frontend/vercel.json`에 `"framework": "nextjs"`, `"outputDirectory": ".next"`를 명시해서 해결.
+- **`NEXT_PUBLIC_API_URL`**: Vercel 프로젝트 환경변수(Production)에 Render 백엔드 URL을 설정. `NEXT_PUBLIC_` 접두사라 빌드 타임에 클라이언트 번들에 박히므로, 이 값을 바꾸면 재배포해야 반영됨.
+
+### 5-2. 배포 방법 (재배포 시 참고)
+
+- **Backend**: Render가 GitHub 연결된 브랜치에 push될 때마다 자동 재배포함 (Render 프로젝트 설정에서 Auto-Deploy 켜져 있는 경우). 수동 배포는 Render 대시보드에서 Manual Deploy.
+- **Frontend**: `cd frontend && vercel --prod --yes` (CLI로 로그인된 상태에서). Git 연동 auto-deploy는 별도로 설정 안 했음 — 지금은 커맨드라인으로 수동 배포하는 방식.
+
+### 5-3. 아직 안 된 것 (다음에 할 일)
+
+- main 브랜치로 옮기기 (organization 권한 이슈로 `feature/yunseo`에서 바로 배포한 상태)
+- Vercel Git 연동으로 push 시 자동 배포 설정 (지금은 수동 `vercel --prod`)
+- Render 무료 플랜은 15분 무활동 시 슬립 → 첫 요청 30~50초 지연 (콜드 스타트), 실사용 트래픽 생기면 유료 플랜 검토
