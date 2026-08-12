@@ -248,6 +248,8 @@ src/
 
 **Supabase PostgreSQL**
 
+최종 테이블 구조와 Mermaid ERD는 [`docs/database-erd.md`](database-erd.md)를 기준으로 한다.
+
 정제 및 분석이 완료된 서비스용 데이터를 저장한다.
 
 Raw Data 전체를 Database에 저장하는 것을 기본 원칙으로 하지 않는다.
