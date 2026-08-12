@@ -258,15 +258,15 @@ interface BondInsightProps {
 export function BondInsight({ selectedFields }: BondInsightProps) {
   const bondName = selectedFields ? pickField(selectedFields, FIELD_CANDIDATES.bondName) : undefined;
   const [remote, setRemote] = useState<RemoteState>({ status: "idle" });
+  // remote가 어느 bondName에 대한 응답인지 추적 → "loading" 여부를 렌더링 시점에 파생시키기 위함
+  const [resolvedBondName, setResolvedBondName] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!bondName) {
-      setRemote({ status: "idle" });
       return;
     }
 
     let cancelled = false;
-    setRemote({ status: "loading" });
 
     fetchBondInsight(bondName)
       .then((data) => {
@@ -283,9 +283,12 @@ export function BondInsight({ selectedFields }: BondInsightProps) {
         } else {
           setRemote({ status: "not-found" });
         }
+        setResolvedBondName(bondName);
       })
       .catch(() => {
-        if (!cancelled) setRemote({ status: "error" });
+        if (cancelled) return;
+        setRemote({ status: "error" });
+        setResolvedBondName(bondName);
       });
 
     return () => {
@@ -293,13 +296,21 @@ export function BondInsight({ selectedFields }: BondInsightProps) {
     };
   }, [bondName]);
 
+  // bondName이 없거나, 아직 이 bondName에 대한 응답을 못 받았으면(=이전 응답이거나 없음) idle/loading으로 파생시킴
+  // (useEffect 안에서 동기적으로 setState하지 않기 위함 — react-hooks/set-state-in-effect)
+  const effectiveRemote: RemoteState = !bondName
+    ? { status: "idle" }
+    : resolvedBondName === bondName
+      ? remote
+      : { status: "loading" };
+
   const metrics = !selectedFields
     ? PLACEHOLDER_METRICS
-    : remote.status === "found"
-      ? remote.backendAvailable && remote.backend
-        ? buildMetricsFromBackend(remote.backend)
-        : buildMetricsFromCsv(remote.base, remote.derived)
-      : remote.status === "loading"
+    : effectiveRemote.status === "found"
+      ? effectiveRemote.backendAvailable && effectiveRemote.backend
+        ? buildMetricsFromBackend(effectiveRemote.backend)
+        : buildMetricsFromCsv(effectiveRemote.base, effectiveRemote.derived)
+      : effectiveRemote.status === "loading"
         ? LOADING_METRICS
         : buildFallbackMetrics(selectedFields ?? {});
 
@@ -317,14 +328,14 @@ export function BondInsight({ selectedFields }: BondInsightProps) {
           <>
             <MousePointerClick size={14} /> Bond Screener에서 채권을 선택해 보세요
           </>
-        ) : remote.status === "loading" ? (
+        ) : effectiveRemote.status === "loading" ? (
           <>
             <Loader2 size={14} className="animate-spin" /> {bondName} 불러오는 중
           </>
-        ) : remote.status === "found" ? (
+        ) : effectiveRemote.status === "found" ? (
           <span>
             선택한 채권 <span className="font-semibold text-navy-800">{bondName}</span> ·{" "}
-            {remote.backendAvailable ? "Supabase 데이터" : "로컬 데이터 (백엔드 서버를 켜면 공식 값으로 바뀌어요)"}
+            {effectiveRemote.backendAvailable ? "Supabase 데이터" : "로컬 데이터 (백엔드 서버를 켜면 공식 값으로 바뀌어요)"}
           </span>
         ) : (
           <span>
