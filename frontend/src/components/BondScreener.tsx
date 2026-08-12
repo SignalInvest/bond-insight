@@ -25,6 +25,7 @@ export function BondScreener({ onSelectBond }: BondScreenerProps) {
         src={TABLEAU_VIEW_URL}
         className="w-full min-w-0 rounded-xl"
         onMarkSelectionChange={onSelectBond}
+        height={900}
       />
     </section>
   );
