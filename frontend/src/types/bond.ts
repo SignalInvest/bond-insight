@@ -23,6 +23,10 @@ export interface BondRow {
   policySpread: number;
   cpi: number | null;
   calculationStatus: string;
+  // src/analysis/calculate_after_tax_yield.py와 동일 공식/가드로 bond-data.ts에서 계산.
+  // status가 "CALCULATED"가 아니면 afterTaxYieldApprox는 항상 null.
+  afterTaxYieldApprox: number | null;
+  afterTaxYieldStatus: "CALCULATED" | "MISSING_YTM" | "MISSING_COUPON" | "OUTLIER_YTM";
   tags: string[];
 }
 

@@ -32,3 +32,17 @@ def test_bond_snapshot_rejects_bad_sort():
     response = client.get("/api/bond-snapshot", params={"sort_by": "unknown"})
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "INVALID_REQUEST"
+
+
+def test_bond_snapshot_includes_after_tax_yield_approx():
+    response = client.get("/api/bond-snapshot")
+    assert response.status_code == 200
+    rows = {row["isin_code"]: row for row in response.json()["data"]}
+
+    # KR1: ytm=3.5, coupon_rate=3.4 -> 3.5 - 3.4*0.154 = 2.9764
+    assert rows["KR1"]["after_tax_yield_status"] == "CALCULATED"
+    assert abs(rows["KR1"]["after_tax_yield_approx"] - 2.9764) < 0.0001
+
+    # KR2: ytm=4.5, coupon_rate=4.1 -> 4.5 - 4.1*0.154 = 3.8686
+    assert rows["KR2"]["after_tax_yield_status"] == "CALCULATED"
+    assert abs(rows["KR2"]["after_tax_yield_approx"] - 3.8686) < 0.0001
