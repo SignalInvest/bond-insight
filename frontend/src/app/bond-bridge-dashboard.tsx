@@ -29,6 +29,15 @@ function formatDate(value: string | null): string {
   return value.replaceAll("-", ".");
 }
 
+// 국채는 별도 문자등급이 없어 bond.rating이 실제로는 항상 null이다(bond-data.ts 참고 -
+// "국채니까 AAA"로 데이터 자체를 임의 추정하지 않기로 했음). 다만 화면 표기 관례상
+// 국채는 최고 신용도(AAA)로 안내한다 - ⑤ 종합 성향 판정(investmentPriority)에는
+// 영향 없음(그쪽은 여전히 실제 rating 데이터 그대로 사용).
+function displayRating(bond: Pick<BondRow, "kind" | "rating">): string {
+  if (bond.kind === "국채") return "AAA";
+  return bond.rating ?? "데이터 미확보";
+}
+
 function deltaText(value: number, unit: string): string {
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}${unit}`;
@@ -38,15 +47,47 @@ function toInputDate(value: string): string {
   return value.slice(0, 10);
 }
 
+// ① 세후 예상수익률. AI 진단 데이터 계약과 동일하게, status가 CALCULATED가 아니면
+// 값을 보여주지 않고 사유만 안내한다(youngeun/ai-diagnosis/PLAN.md).
+function describeAfterTaxYield(bond: BondRow): string {
+  if (bond.afterTaxYieldApprox !== null) {
+    return `세후 예상수익률은 약 ${bond.afterTaxYieldApprox.toFixed(2)}%로, 표면이자에 대한 세금(15.4%)만 반영한 근사값입니다.`;
+  }
+  if (bond.afterTaxYieldStatus === "OUTLIER_YTM") {
+    return "YTM이 일반적으로 해석 가능한 범위를 벗어나 있어 세후 예상수익률을 계산하지 않았습니다.";
+  }
+  if (bond.afterTaxYieldStatus === "MISSING_COUPON") {
+    return "표면금리 데이터가 없어 세후 예상수익률을 계산하지 않았습니다.";
+  }
+  return "YTM 데이터가 없어 세후 예상수익률을 계산하지 않았습니다.";
+}
+
+// ② Duration 민감도 등급.
+function describeDurationSensitivity(bond: BondRow): string {
+  if (bond.durationSensitivity !== null && bond.duration !== null) {
+    return `금리 민감도는 "${bond.durationSensitivity}" 등급입니다 (Duration ${bond.duration.toFixed(2)}년 기준 — 금리 1%p 변화 시 가격이 약 ${bond.duration.toFixed(2)}% 움직일 수 있습니다).`;
+  }
+  return "만기 구조(영구채/옵션부 등)나 시세 데이터 부족으로 금리 민감도 등급을 산출하지 않았습니다.";
+}
+
+// ⑤ 종합 성향 매칭 — 이 사이드바에서 반드시 노출해야 하는 핵심 진단.
+function describeInvestmentPriority(bond: BondRow): string {
+  if (bond.investmentPriority !== null) {
+    return `신용등급·신용스프레드·금리 민감도를 종합하면 "${bond.investmentPriority}" 성향에 가까운 채권입니다.`;
+  }
+  return "판정에 필요한 신호(신용등급/신용스프레드/금리 민감도) 중 2개 이상이 없어 종합 성향을 판정하지 않았습니다.";
+}
+
 function generateInvestmentInsight(bond: BondRow, market: MarketSnapshot) {
   const extraYield = bond.ytm - market.treasury3y;
-  const durationText = bond.duration === null ? "듀레이션 산출 데이터가 없어" : `듀레이션 ${bond.duration.toFixed(2)}년 기준`;
 
   return {
     headline: `선택 채권의 만기수익률은 ${bond.ytm.toFixed(2)}%이고 국고채 3Y 대비 ${deltaText(extraYield, "%p")} 차이를 보입니다.`,
-    returnView: `수익률 관점에서는 현재 만기수익률 ${bond.ytm.toFixed(2)}%와 기준금리 ${market.baseRate.toFixed(2)}% 사이의 간격을 함께 볼 수 있습니다.`,
-    riskView: `${durationText} 시장금리 변동에 따른 가격 민감도를 확인해야 합니다. 잔존만기는 ${bond.remainingLabel}입니다.`,
-    checkView: `거래량은 ${formatMillion(bond.volume)}백만 단위이며, 신용등급 또는 표면금리처럼 CSV에 없는 항목은 추가 데이터 연결 후 판단 범위를 넓힐 수 있습니다.`,
+    priorityLabel: bond.investmentPriority,
+    returnView: `${describeAfterTaxYield(bond)} 기준금리(${market.baseRate.toFixed(2)}%)와의 간격도 함께 볼 수 있습니다.`,
+    riskView: describeDurationSensitivity(bond),
+    priorityView: describeInvestmentPriority(bond),
+    checkView: `거래량은 ${formatMillion(bond.volume)}백만 단위입니다. 거래량 추이(과거 이력)는 현재 데이터가 2026-08-07 하루치 스냅샷이라 제공하지 않습니다.`,
   };
 }
 
@@ -128,11 +169,11 @@ export default function BondBridgeDashboard({ data }: Props) {
     return bondsForDate.filter((bond) => {
       if (quickFilter === "국채" && bond.kind !== "국채") return false;
       if (quickFilter === "회사채" && bond.kind === "국채") return false;
-      if (quickFilter === "안정성 중심" && !bond.tags.includes("안정성 중심")) return false;
-      if (quickFilter === "수익률 중심" && !bond.tags.includes("수익률 높음")) return false;
+      if (quickFilter === "안정성 중심" && bond.investmentPriority !== "안정성 중심") return false;
+      if (quickFilter === "수익률 중심" && bond.investmentPriority !== "수익률 중심") return false;
       if (quickFilter === "단기채" && bond.remainingYears >= 3) return false;
       if (kindFilter !== "전체" && bond.kind !== kindFilter) return false;
-      if (ratingFilter !== "전체" && (bond.rating ?? "데이터 미확보") !== ratingFilter) return false;
+      if (ratingFilter !== "전체" && displayRating(bond) !== ratingFilter) return false;
       if (maturityFilter === "단기" && bond.remainingYears >= 3) return false;
       if (maturityFilter === "중기" && (bond.remainingYears < 3 || bond.remainingYears >= 7)) return false;
       if (maturityFilter === "장기" && bond.remainingYears < 7) return false;
@@ -147,7 +188,7 @@ export default function BondBridgeDashboard({ data }: Props) {
   }, [bondsForDate, kindFilter, maturityFilter, query, quickFilter, ratingFilter]);
 
   const kinds = ["전체", ...Array.from(new Set(bondsForDate.map((bond) => bond.kind)))];
-  const ratings = ["전체", ...Array.from(new Set(bondsForDate.map((bond) => bond.rating ?? "데이터 미확보")))];
+  const ratings = ["전체", ...Array.from(new Set(bondsForDate.map(displayRating)))];
   const insight = selectedBond && market ? generateInvestmentInsight(selectedBond, market) : null;
   const trend = selectedBond ? buildTrendPoints(selectedBond) : [];
   const trendPath = trend.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
@@ -313,7 +354,7 @@ export default function BondBridgeDashboard({ data }: Props) {
                       </span>
                       <span>{bond.issuer ?? "데이터 미확보"}</span>
                       <span>{bond.kind}</span>
-                      <span>{bond.rating ?? "데이터 미확보"}</span>
+                      <span>{displayRating(bond)}</span>
                       <span className={bond.ytm >= market.treasury3y ? "positive" : "negative"}>{formatPercent(bond.ytm)}</span>
                       <span>{formatPercent(bond.couponRate)}</span>
                       <span>{bond.remainingLabel}</span>
@@ -341,8 +382,12 @@ export default function BondBridgeDashboard({ data }: Props) {
 
                   <div className="selected-title">
                     <h3>{selectedBond.bondName}</h3>
-                    <p>{selectedBond.kind} · {selectedBond.rating ?? "신용등급 데이터 미확보"}</p>
-                    <div>{selectedBond.tags[0] ?? "태그 산출 기준 TODO"}</div>
+                    <p>
+                      {selectedBond.kind === "국채"
+                        ? "국채(AAA)"
+                        : `${selectedBond.kind} · ${displayRating(selectedBond)}`}
+                    </p>
+                    <div>{selectedBond.investmentPriority ?? "판정 데이터 부족"}</div>
                   </div>
 
                   <div className="navy-kpis">
@@ -364,7 +409,16 @@ export default function BondBridgeDashboard({ data }: Props) {
                     <div><dt>표면금리</dt><dd>{formatPercent(selectedBond.couponRate)}</dd></div>
                     <div><dt>발행일</dt><dd>{formatDate(selectedBond.issueDate)}</dd></div>
                     <div><dt>만기일</dt><dd>{formatDate(selectedBond.maturityDate)}</dd></div>
-                    <div><dt>듀레이션</dt><dd>{selectedBond.duration === null ? "산출 데이터 없음" : selectedBond.duration.toFixed(3)}</dd></div>
+                    <div>
+                      <dt>듀레이션</dt>
+                      <dd>
+                        {selectedBond.duration === null
+                          ? "산출 데이터 없음"
+                          : `${selectedBond.duration.toFixed(3)}${
+                              selectedBond.durationSensitivity ? ` (${selectedBond.durationSensitivity})` : ""
+                            }`}
+                      </dd>
+                    </div>
                     <div><dt>거래량(백만)</dt><dd>{formatMillion(selectedBond.volume)}</dd></div>
                   </dl>
 
@@ -457,9 +511,11 @@ export default function BondBridgeDashboard({ data }: Props) {
               <button aria-label="AI 분석 닫기" onClick={() => setIsAiOpen(false)} type="button">Close</button>
             </div>
             <h3>{insight.headline}</h3>
+            {insight.priorityLabel && <span className="priority-badge">{insight.priorityLabel}</span>}
             <div className="ai-grid drawer-grid">
-              <article><strong>수익률 관점</strong><p>{insight.returnView}</p></article>
-              <article><strong>위험 관점</strong><p>{insight.riskView}</p></article>
+              <article><strong>수익 관점</strong><p>{insight.returnView}</p></article>
+              <article><strong>금리위험 관점</strong><p>{insight.riskView}</p></article>
+              <article><strong>종합 진단</strong><p>{insight.priorityView}</p></article>
               <article><strong>확인할 점</strong><p>{insight.checkView}</p></article>
             </div>
           </aside>

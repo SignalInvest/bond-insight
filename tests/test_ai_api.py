@@ -36,6 +36,22 @@ def test_ai_missing_bond():
     assert response.status_code == 404
 
 
+def test_ai_explain_includes_diagnosis(monkeypatch):
+    monkeypatch.setattr(ai, "generate_explanation", fake_generate)
+    response = client.post("/api/ai/explain", json={"isin": "KR1"})
+    diagnosis = response.json()["context"]["diagnosis"]
+
+    # KR1: ytm=3.5, coupon_rate=3.4 -> after_tax_yield_approx = 3.5 - 3.4*0.154 = 2.9764
+    assert diagnosis["after_tax_yield_approx"]["status"] == "CALCULATED"
+    assert abs(diagnosis["after_tax_yield_approx"]["value"] - 2.9764) < 0.0001
+
+    # modified_duration=1.8 -> "중간" 등급 (0.5 < 1.8 <= 2.5)
+    assert diagnosis["duration_sensitivity"] == {"value": "중간", "status": "CALCULATED"}
+
+    # 등급 없음(신호 제외) + 스프레드 0.5(NEUTRAL) + Duration 중간(NEUTRAL) -> 균형형
+    assert diagnosis["investment_priority"]["value"] == "균형형"
+
+
 def test_provider_dispatches_to_gemini(monkeypatch):
     monkeypatch.setattr(explanation_service.settings, "ai_provider", "gemini")
     monkeypatch.setattr(

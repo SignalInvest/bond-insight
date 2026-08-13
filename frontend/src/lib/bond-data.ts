@@ -52,6 +52,62 @@ function calculateAfterTaxYieldApprox(ytm: number, couponRate: number): number {
   return ytm - couponRate * WITHHOLDING_TAX_RATE;
 }
 
+// src/analysis/classify_duration_sensitivity.py와 동일한 임계값(그쪽이 원본).
+const DURATION_LOW_THRESHOLD = 0.5;
+const DURATION_HIGH_THRESHOLD = 2.5;
+
+type DurationSensitivity = "저민감" | "중간" | "고민감";
+
+function classifyDurationSensitivity(duration: number | null): DurationSensitivity | null {
+  if (duration === null) return null;
+  if (duration <= DURATION_LOW_THRESHOLD) return "저민감";
+  if (duration <= DURATION_HIGH_THRESHOLD) return "중간";
+  return "고민감";
+}
+
+// src/analysis/classify_investment_priority.py와 동일한 임계값/규칙(그쪽이 원본).
+type Signal = "STABLE" | "NEUTRAL" | "YIELD";
+const SIGNAL_SCORE: Record<Signal, number> = { STABLE: 1, NEUTRAL: 0, YIELD: -1 };
+const SPREAD_STABLE_MAX = 0;
+const SPREAD_YIELD_MIN = 0.5;
+const MIN_AVAILABLE_SIGNALS = 2;
+
+function classifyRatingSignal(creditRating: string | null): Signal | null {
+  if (creditRating === null) return null;
+  const grade = creditRating.replace(/[+\-0]+$/, "");
+  if (grade === "AAA" || grade === "AA") return "STABLE";
+  if (grade === "A") return "NEUTRAL";
+  return "YIELD";
+}
+
+function classifySpreadSignal(creditSpread: number | null): Signal | null {
+  if (creditSpread === null) return null;
+  if (creditSpread <= SPREAD_STABLE_MAX) return "STABLE";
+  if (creditSpread <= SPREAD_YIELD_MIN) return "NEUTRAL";
+  return "YIELD";
+}
+
+function classifyDurationSignal(durationSensitivity: DurationSensitivity | null): Signal | null {
+  if (durationSensitivity === null) return null;
+  return { 저민감: "STABLE", 중간: "NEUTRAL", 고민감: "YIELD" }[durationSensitivity] as Signal;
+}
+
+type InvestmentPriority = "안정성 중심" | "수익률 중심" | "균형형";
+
+function classifyInvestmentPriority(
+  ratingSignal: Signal | null,
+  spreadSignal: Signal | null,
+  durationSignal: Signal | null,
+): InvestmentPriority | null {
+  const signals = [ratingSignal, spreadSignal, durationSignal].filter((s): s is Signal => s !== null);
+  if (signals.length < MIN_AVAILABLE_SIGNALS) return null;
+
+  const total = signals.reduce((sum, s) => sum + SIGNAL_SCORE[s], 0);
+  if (total > 0) return "안정성 중심";
+  if (total < 0) return "수익률 중심";
+  return "균형형";
+}
+
 function parseCsv(text: string): CsvRecord[] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -262,20 +318,36 @@ export async function getBondDashboardData(): Promise<BondDashboardData> {
       const afterTaxYieldApprox =
         afterTaxYieldStatus === "CALCULATED" ? calculateAfterTaxYieldApprox(ytm, couponRate!) : null;
 
+      // 국채/지방채처럼 등급 자체가 없는 채권은 "국채니까 AAA"로 추정하지 않고 그대로 null로 둔다
+      // (src/processing/enrich_tableau_dashboard.py, classify_investment_priority.py와 동일 원칙).
+      const rating = row.credit_rating || null;
+      const duration = toNumber(row.modified_duration);
+      const durationSensitivity = classifyDurationSensitivity(duration);
+      // ①이 OUTLIER_YTM이면 같은 YTM에서 파생된 신용스프레드도 신호에서 제외
+      // (classify_investment_priority.py의 build_investment_priority와 동일 가드).
+      const spreadForSignal = afterTaxYieldStatus === "OUTLIER_YTM" ? null : creditSpread;
+      const investmentPriority = classifyInvestmentPriority(
+        classifyRatingSignal(rating),
+        classifySpreadSignal(spreadForSignal),
+        classifyDurationSignal(durationSensitivity),
+      );
+
       const baseBond = {
         id: row.isin_code || row.short_code || `bond-${index}`,
         date: row.reference_date || row.date,
         bondName: row.bond_name,
         issuer: inferIssuer(row, kind),
         kind,
-        rating: kind === "국채" ? "AAA" : null,
+        rating,
         ytm,
         couponRate,
         afterTaxYieldApprox,
         afterTaxYieldStatus,
+        duration,
+        durationSensitivity,
+        investmentPriority,
         remainingYears,
         remainingLabel: maturityLabel(remainingYears),
-        duration: toNumber(row.modified_duration),
         currentPrice: price,
         volume,
         tradingValue,
