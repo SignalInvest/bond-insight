@@ -1,4 +1,4 @@
-import type { ApiErrorResponse, HealthResponse, MarketResponse } from "@/types/api";
+import type { AiExplainResponse, ApiErrorResponse, HealthResponse, MarketResponse } from "@/types/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
@@ -49,4 +49,13 @@ export async function getMarketRates(
   if (params.startDate) query.set("start_date", params.startDate);
   if (params.endDate) query.set("end_date", params.endDate);
   return apiFetch<MarketResponse>(`/api/market?${query.toString()}`, { cache: "no-store" });
+}
+
+/** AI Analysis 패널용 — ISIN이 Supabase에 없으면 ApiError(status 404, code "NOT_FOUND")를 던진다. */
+export async function explainBond(isin: string): Promise<AiExplainResponse> {
+  return apiFetch<AiExplainResponse>("/api/ai/explain", {
+    method: "POST",
+    body: JSON.stringify({ isin }),
+    cache: "no-store",
+  });
 }

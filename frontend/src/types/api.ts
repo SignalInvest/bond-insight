@@ -31,3 +31,9 @@ export interface MarketResponse {
   latest: MarketRatesRow | null;
   data: MarketRatesRow[];
 }
+
+// backend/app/api/ai.py POST /api/ai/explain 응답 (context는 화면에서 안 씀)
+export interface AiExplainResponse {
+  explanation: string;
+  model: string;
+}
