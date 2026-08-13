@@ -2,22 +2,26 @@
 
 import { useState } from "react";
 
+import type { BondSnapshotRow } from "@/types/api";
+
 import { BondInsight } from "./BondInsight";
 import { BondScreener } from "./BondScreener";
 import { MarketOverview } from "./MarketOverview";
 
-export function DashboardBody() {
-  const [selectedBond, setSelectedBond] = useState<Record<string, string> | null>(null);
+interface DashboardBodyProps {
+  referenceDate: string;
+}
+
+export function DashboardBody({ referenceDate }: DashboardBodyProps) {
+  const [selectedBond, setSelectedBond] = useState<BondSnapshotRow | null>(null);
 
   return (
-    <main className="mx-auto flex max-w-[1300px] flex-col gap-8 px-6 py-8">
-      <MarketOverview />
+    <main className="mx-auto flex max-w-[1600px] flex-col gap-4 px-8 py-6">
+      <MarketOverview referenceDate={referenceDate} />
 
-      {/* Bond Insight는 오른쪽 배치 유지. Tableau가 1200px 고정 폭이라 이 칸(2/3 폭)보다 넓어서
-          TableauEmbed 안쪽에서 가로 스크롤로 처리됨(min-w-0 필요) — docs/SKILL.md 참고. */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="min-w-0 lg:col-span-2">
-          <BondScreener onSelectBond={setSelectedBond} />
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1.55fr)_minmax(420px,1fr)]">
+        <div className="min-w-0">
+          <BondScreener referenceDate={referenceDate} selectedIsin={selectedBond?.isin_code} onSelectBond={setSelectedBond} />
         </div>
         <BondInsight selectedFields={selectedBond} />
       </div>
