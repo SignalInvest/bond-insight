@@ -1,101 +1,20 @@
 "use client";
 
-import { Activity, LineChart, Loader2, MousePointerClick, Percent, ShieldAlert } from "lucide-react";
-import { useEffect, useState } from "react";
-import type { ComponentType } from "react";
+import { MousePointerClick, Sparkles } from "lucide-react";
+import { useState } from "react";
+
+import { formatRemainingMaturity } from "@/lib/bondSnapshot";
+import type { BondSnapshotRow } from "@/types/api";
+
+import { AiAnalysisPanel } from "./AiAnalysisPanel";
 
 interface InsightMetric {
   label: string;
   value: string;
   caption: string;
-  icon: ComponentType<{ size?: number }>;
 }
-
-interface BondInsightBaseRow {
-  date: string;
-  isin: string;
-  bond_name: string;
-  issuer: string;
-  bond_type: string;
-  credit_rating: string;
-  coupon_rate: string;
-  close_price: string;
-  ytm: string;
-  volume: string;
-  trading_value: string;
-  has_option: string;
-  is_fixed_rate: string;
-}
-
-interface BondInsightDerivedRow {
-  isin: string;
-  macaulay_duration: string;
-  modified_duration: string;
-  relative_yield_spread: string;
-}
-
-// backend/app/services/bond_service.py get_bond()의 응답 형태
-interface BackendBond {
-  isin_code: string;
-  bond_name: string;
-  market: {
-    reference_date: string;
-    close_price: number | null;
-    ytm: number | null;
-    volume: number | null;
-    trading_value: number | null;
-    benchmark_treasury_rate: number | null;
-    credit_spread: number | null;
-  } | null;
-  metrics: {
-    reference_date: string;
-    macaulay_duration: number | null;
-    modified_duration: number | null;
-    duration_status: string | null;
-  } | null;
-}
-
-interface BondInsightApiResponse {
-  found: boolean;
-  isin?: string;
-  backendAvailable?: boolean;
-  base?: BondInsightBaseRow;
-  derived?: BondInsightDerivedRow | null;
-  backend?: BackendBond | null;
-}
-
-// Bond Screener(Tableau, yunseo_3h48m)의 실제 컬럼명 기준 (2026-08-12 확인):
-// 채권명 / 발행사 / 유형 / 신용등급 / 잔존만기 / YTM(수익률) / 현재가
-const FIELD_CANDIDATES = {
-  bondName: ["채권명", "Bond Name", "bond_name"],
-  ytm: ["YTM", "수익률", "ytm"],
-};
 
 const WITHHOLDING_TAX_RATE = 0.154;
-
-function pickField(fields: Record<string, string>, candidates: string[]): string | undefined {
-  for (const key of candidates) {
-    if (fields[key] !== undefined) return fields[key];
-  }
-  const lowerCandidates = candidates.map((c) => c.toLowerCase());
-  for (const [key, value] of Object.entries(fields)) {
-    const lowerKey = key.toLowerCase();
-    if (lowerCandidates.some((c) => lowerKey.includes(c))) return value;
-  }
-  return undefined;
-}
-
-function parsePercent(raw: string | undefined): number | null {
-  if (!raw) return null;
-  const num = Number.parseFloat(raw.replace(/[^0-9.-]/g, ""));
-  return Number.isNaN(num) ? null : num;
-}
-
-function parseNullableFloat(raw: string | undefined): number | null {
-  if (raw === undefined || raw === "") return null;
-  const num = Number.parseFloat(raw);
-  return Number.isNaN(num) ? null : num;
-}
 
 function formatKoreanNumber(value: number, unit: string): string {
   const abs = Math.abs(value);
@@ -104,261 +23,147 @@ function formatKoreanNumber(value: number, unit: string): string {
   return `${value.toLocaleString()}${unit}`;
 }
 
-async function fetchBondInsight(bondName: string): Promise<BondInsightApiResponse> {
-  const response = await fetch(`/api/bond-insight?bondName=${encodeURIComponent(bondName)}`);
-  return (await response.json()) as BondInsightApiResponse;
+function durationUnavailableReason(bond: BondSnapshotRow): string {
+  if (bond.has_option) return "옵션부 채권이라 계산 대상에서 제외됐어요";
+  if (bond.is_fixed_rate === false) return "변동금리 채권이라 계산 대상에서 제외됐어요";
+  if (bond.remaining_days === null) return "영구채라 계산 대상에서 제외됐어요";
+  return "계산에 필요한 데이터가 부족해요";
 }
 
-/** 1순위: 백엔드(FastAPI + Supabase, /api/bonds/{isin})의 공식 계산값. */
-function buildMetricsFromBackend(bond: BackendBond): InsightMetric[] {
-  const market = bond.market;
-  const metrics = bond.metrics;
-  const ytm = market?.ytm ?? null;
-  const tradingValue = market?.trading_value ?? null;
-  const volume = market?.volume ?? null;
-  const creditSpread = market?.credit_spread ?? null;
-  const modifiedDuration = metrics?.modified_duration ?? null;
+// 남색 블록 4지표 — 계산식은 mock 이전(백엔드/CSV 연동판)과 동일, 데이터 소스만
+// bond_snapshot(Supabase)으로 바뀜 (docs/SKILL_1035.md Step 4).
+function buildInsightMetrics(bond: BondSnapshotRow): InsightMetric[] {
+  const isTreasury = bond.bond_type === "국채";
 
   return [
     {
       label: "오늘 거래량 (유동성)",
-      value: tradingValue !== null ? formatKoreanNumber(tradingValue, "원") : "데이터 없음",
-      caption:
-        volume !== null && market
-          ? `${formatKoreanNumber(volume, "좌")} 체결 · ${market.reference_date} 기준 (Supabase)`
-          : "Supabase에 거래 데이터가 없어요",
-      icon: Activity,
+      value: bond.trading_value !== null ? formatKoreanNumber(bond.trading_value, "원") : "데이터 없음",
+      caption: `${bond.reference_date} 기준 (Supabase)`,
     },
     {
       label: "실질수익률 (세후)",
-      value: ytm !== null ? `${(ytm * (1 - WITHHOLDING_TAX_RATE)).toFixed(2)}%` : "데이터 없음",
-      caption: ytm !== null ? `세전 YTM ${ytm}% × (1 − 이자소득세 15.4%)` : "YTM 데이터가 없어요",
-      icon: Percent,
+      value: `${(bond.ytm * (1 - WITHHOLDING_TAX_RATE)).toFixed(2)}%`,
+      caption: `세전 YTM ${bond.ytm.toFixed(2)}% × (1 − 이자소득세 15.4%)`,
     },
     {
       label: "신용 스프레드",
       value:
-        creditSpread !== null ? `${creditSpread >= 0 ? "+" : ""}${(creditSpread * 100).toFixed(0)}bp` : "데이터 없음",
-      caption: creditSpread !== null ? "YTM − 잔존만기 보간 국고채 금리 (Supabase 계산값)" : "벤치마크 금리를 찾지 못했어요",
-      icon: ShieldAlert,
+        isTreasury
+          ? "해당 없음"
+          : bond.relative_yield_spread !== null
+            ? `${bond.relative_yield_spread >= 0 ? "+" : ""}${(bond.relative_yield_spread * 100).toFixed(0)}bp`
+            : "데이터 없음",
+      caption: isTreasury
+        ? "국채는 스스로가 기준금리라 신용 스프레드가 의미 없어요"
+        : bond.relative_yield_spread !== null
+          ? "YTM − 잔존만기 보간 국고채 금리 (Supabase 계산값)"
+          : "벤치마크 금리를 찾지 못했어요",
     },
     {
       label: "Duration (금리 민감도)",
-      value: modifiedDuration !== null ? modifiedDuration.toFixed(2) : "데이터 없음",
+      value: bond.modified_duration !== null ? bond.modified_duration.toFixed(2) : "데이터 없음",
       caption:
-        modifiedDuration !== null
-          ? `금리 1%p 오르면 가격 약 -${modifiedDuration.toFixed(2)}% 변동 (Supabase 계산값)`
-          : metrics?.duration_status
-            ? `계산 제외 사유: ${metrics.duration_status}`
-            : "Duration 데이터가 없어요",
-      icon: LineChart,
+        bond.modified_duration !== null
+          ? `금리 1%p 오르면 가격 약 -${bond.modified_duration.toFixed(2)}% 변동 (Supabase 계산값)`
+          : durationUnavailableReason(bond),
     },
   ];
 }
 
-/** 2순위: 백엔드 서버가 꺼져 있을 때 — yunseo/output 로컬 CSV 값. */
-function buildMetricsFromCsv(base: BondInsightBaseRow, derived: BondInsightDerivedRow | null): InsightMetric[] {
-  const ytm = parseNullableFloat(base.ytm);
-  const tradingValue = parseNullableFloat(base.trading_value);
-  const volume = parseNullableFloat(base.volume);
-  const modifiedDuration = derived ? parseNullableFloat(derived.modified_duration) : null;
-  const relativeSpread = derived ? parseNullableFloat(derived.relative_yield_spread) : null;
-
-  const unavailableReason =
-    base.has_option === "True"
-      ? "옵션부 채권이라 계산 대상에서 제외됐어요"
-      : base.is_fixed_rate === "False"
-        ? "변동금리 채권이라 계산 대상에서 제외됐어요"
-        : "계산에 필요한 데이터가 부족해요";
-
-  return [
-    {
-      label: "오늘 거래량 (유동성)",
-      value: tradingValue !== null ? formatKoreanNumber(tradingValue, "원") : "데이터 없음",
-      caption:
-        volume !== null
-          ? `${formatKoreanNumber(volume, "좌")} 체결 · ${base.date} 기준 (백엔드 서버 꺼짐, 로컬 값)`
-          : `${base.date} 기준 (백엔드 서버 꺼짐, 로컬 값)`,
-      icon: Activity,
-    },
-    {
-      label: "실질수익률 (세후)",
-      value: ytm !== null ? `${(ytm * (1 - WITHHOLDING_TAX_RATE)).toFixed(2)}%` : "데이터 없음",
-      caption: ytm !== null ? `세전 YTM ${ytm}% × (1 − 이자소득세 15.4%)` : "YTM 데이터가 없어요",
-      icon: Percent,
-    },
-    {
-      label: "신용 스프레드",
-      value:
-        relativeSpread !== null ? `${relativeSpread >= 0 ? "+" : ""}${(relativeSpread * 100).toFixed(0)}bp` : "데이터 없음",
-      caption: relativeSpread !== null ? "YTM − 잔존만기와 가장 가까운 국고채 금리 (로컬 계산)" : unavailableReason,
-      icon: ShieldAlert,
-    },
-    {
-      label: "Duration (금리 민감도)",
-      value: modifiedDuration !== null ? modifiedDuration.toFixed(2) : "데이터 없음",
-      caption:
-        modifiedDuration !== null
-          ? `금리 1%p 오르면 가격 약 -${modifiedDuration.toFixed(2)}% 변동 (로컬 계산)`
-          : unavailableReason,
-      icon: LineChart,
-    },
-  ];
-}
-
-/** 3순위: yunseo CSV에도 없을 때 — Tableau의 YTM만으로 계산 가능한 것만. */
-function buildFallbackMetrics(fields: Record<string, string>): InsightMetric[] {
-  const ytm = parsePercent(pickField(fields, FIELD_CANDIDATES.ytm));
-
-  return [
-    { label: "오늘 거래량 (유동성)", value: "데이터 없음", caption: "이 채권을 찾지 못했어요", icon: Activity },
-    {
-      label: "실질수익률 (세후)",
-      value: ytm !== null ? `${(ytm * (1 - WITHHOLDING_TAX_RATE)).toFixed(2)}%` : "데이터 없음",
-      caption: ytm !== null ? `세전 YTM ${ytm}% × (1 − 이자소득세 15.4%)` : "YTM 필드를 찾지 못했어요",
-      icon: Percent,
-    },
-    { label: "신용 스프레드", value: "데이터 없음", caption: "이 채권을 찾지 못했어요", icon: ShieldAlert },
-    { label: "Duration (금리 민감도)", value: "데이터 없음", caption: "이 채권을 찾지 못했어요", icon: LineChart },
-  ];
-}
-
-const PLACEHOLDER_METRICS: InsightMetric[] = [
-  { label: "오늘 거래량 (유동성)", value: "-", caption: "왼쪽 표에서 채권을 선택하세요", icon: Activity },
-  { label: "실질수익률 (세후)", value: "-", caption: "왼쪽 표에서 채권을 선택하세요", icon: Percent },
-  { label: "신용 스프레드", value: "-", caption: "왼쪽 표에서 채권을 선택하세요", icon: ShieldAlert },
-  { label: "Duration (금리 민감도)", value: "-", caption: "왼쪽 표에서 채권을 선택하세요", icon: LineChart },
+const DETAIL_FIELDS: { label: string; value: (bond: BondSnapshotRow) => string }[] = [
+  { label: "채권명", value: (bond) => bond.bond_name },
+  { label: "발행사", value: (bond) => bond.issuer ?? "-" },
+  { label: "유형", value: (bond) => bond.bond_type ?? "-" },
+  { label: "신용등급", value: (bond) => bond.credit_rating ?? "-" },
+  { label: "잔존만기", value: formatRemainingMaturity },
+  { label: "YTM(수익률)", value: (bond) => `${bond.ytm.toFixed(2)}%` },
+  { label: "현재가격", value: (bond) => `${bond.close_price.toLocaleString()}원` },
 ];
-
-const LOADING_METRICS: InsightMetric[] = [
-  { label: "오늘 거래량 (유동성)", value: "…", caption: "불러오는 중", icon: Activity },
-  { label: "실질수익률 (세후)", value: "…", caption: "불러오는 중", icon: Percent },
-  { label: "신용 스프레드", value: "…", caption: "불러오는 중", icon: ShieldAlert },
-  { label: "Duration (금리 민감도)", value: "…", caption: "불러오는 중", icon: LineChart },
-];
-
-type RemoteState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | {
-      status: "found";
-      isin: string;
-      backendAvailable: boolean;
-      base: BondInsightBaseRow;
-      derived: BondInsightDerivedRow | null;
-      backend: BackendBond | null;
-    }
-  | { status: "not-found" }
-  | { status: "error" };
 
 interface BondInsightProps {
-  selectedFields: Record<string, string> | null;
+  selectedFields: BondSnapshotRow | null;
 }
 
-export function BondInsight({ selectedFields }: BondInsightProps) {
-  const bondName = selectedFields ? pickField(selectedFields, FIELD_CANDIDATES.bondName) : undefined;
-  const [remote, setRemote] = useState<RemoteState>({ status: "idle" });
-  // remote가 어느 bondName에 대한 응답인지 추적 → "loading" 여부를 렌더링 시점에 파생시키기 위함
-  const [resolvedBondName, setResolvedBondName] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    if (!bondName) {
-      return;
-    }
-
-    let cancelled = false;
-
-    fetchBondInsight(bondName)
-      .then((data) => {
-        if (cancelled) return;
-        if (data.found && data.base && data.isin) {
-          setRemote({
-            status: "found",
-            isin: data.isin,
-            backendAvailable: data.backendAvailable ?? false,
-            base: data.base,
-            derived: data.derived ?? null,
-            backend: data.backend ?? null,
-          });
-        } else {
-          setRemote({ status: "not-found" });
-        }
-        setResolvedBondName(bondName);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setRemote({ status: "error" });
-        setResolvedBondName(bondName);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bondName]);
-
-  // bondName이 없거나, 아직 이 bondName에 대한 응답을 못 받았으면(=이전 응답이거나 없음) idle/loading으로 파생시킴
-  // (useEffect 안에서 동기적으로 setState하지 않기 위함 — react-hooks/set-state-in-effect)
-  const effectiveRemote: RemoteState = !bondName
-    ? { status: "idle" }
-    : resolvedBondName === bondName
-      ? remote
-      : { status: "loading" };
-
-  const metrics = !selectedFields
-    ? PLACEHOLDER_METRICS
-    : effectiveRemote.status === "found"
-      ? effectiveRemote.backendAvailable && effectiveRemote.backend
-        ? buildMetricsFromBackend(effectiveRemote.backend)
-        : buildMetricsFromCsv(effectiveRemote.base, effectiveRemote.derived)
-      : effectiveRemote.status === "loading"
-        ? LOADING_METRICS
-        : buildFallbackMetrics(selectedFields ?? {});
+export function BondInsight({ selectedFields: bond }: BondInsightProps) {
+  const [isAiOpen, setIsAiOpen] = useState(false);
 
   return (
     <section
-      aria-labelledby="bond-insight-title"
-      className="rounded-2xl border border-gold-500/30 bg-white p-5 shadow-sm shadow-navy-900/5"
+      aria-labelledby="bond-overview-title"
+      className="rounded-lg border border-gold-500/30 bg-white/60 p-5 shadow-sm"
     >
-      <h2 id="bond-insight-title" className="mb-1 flex items-center gap-2 text-lg font-bold text-navy-900">
-        <LineChart size={20} className="text-gold-600" />
-        Bond Insight
-      </h2>
-      <p className="mb-4 flex items-center gap-1 text-xs text-ink-600">
-        {!selectedFields ? (
-          <>
-            <MousePointerClick size={14} /> Bond Screener에서 채권을 선택해 보세요
-          </>
-        ) : effectiveRemote.status === "loading" ? (
-          <>
-            <Loader2 size={14} className="animate-spin" /> {bondName} 불러오는 중
-          </>
-        ) : effectiveRemote.status === "found" ? (
-          <span>
-            선택한 채권 <span className="font-semibold text-navy-800">{bondName}</span> ·{" "}
-            {effectiveRemote.backendAvailable ? "Supabase 데이터" : "로컬 데이터 (백엔드 서버를 켜면 공식 값으로 바뀌어요)"}
-          </span>
-        ) : (
-          <span>
-            선택한 채권 <span className="font-semibold text-navy-800">{bondName ?? "(이름 필드 없음)"}</span> — 정확한
-            데이터를 찾지 못했어요
-          </span>
-        )}
-      </p>
-
-      <div className="flex flex-col gap-3">
-        {metrics.map((metric) => (
-          <div key={metric.label} className="flex items-start gap-3 rounded-xl bg-cream-50 p-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cream-100 text-gold-600">
-              <metric.icon size={16} />
-            </span>
-            <div>
-              <p className="text-xs text-ink-600">{metric.label}</p>
-              <p className="text-lg font-bold text-navy-900">{metric.value}</p>
-              <p className="text-xs text-ink-400">{metric.caption}</p>
-            </div>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="font-serif text-2xl leading-none text-gold-500">03</span>
+          <div>
+            <h2 id="bond-overview-title" className="text-xl font-bold text-ink-900">
+              BOND OVERVIEW
+            </h2>
+            <p className="mt-1 flex items-center gap-1 text-sm text-ink-600">
+              {bond ? (
+                <>선택한 채권의 상세 정보예요.</>
+              ) : (
+                <>
+                  <MousePointerClick size={14} /> 좌측에서 채권을 선택하면 상세 정보가 표시됩니다.
+                </>
+              )}
+            </p>
           </div>
-        ))}
+        </div>
+        {bond && (
+          <button
+            type="button"
+            onClick={() => setIsAiOpen(true)}
+            className="flex shrink-0 items-center gap-1.5 rounded border border-gold-500 bg-navy-950 px-3.5 py-2 text-xs font-black tracking-wide text-cream-50"
+          >
+            <Sparkles size={13} className="text-gold-400" />
+            AI Analysis
+          </button>
+        )}
       </div>
+
+      {bond && isAiOpen && <AiAnalysisPanel bond={bond} onClose={() => setIsAiOpen(false)} />}
+
+      {!bond ? (
+        <div className="flex flex-col gap-3">
+          {["오늘 거래량 (유동성)", "실질수익률 (세후)", "신용 스프레드", "Duration (금리 민감도)"].map((label) => (
+            <div key={label} className="rounded bg-cream-50 p-3">
+              <p className="text-xs text-ink-600">{label}</p>
+              <p className="text-lg font-bold text-navy-900">-</p>
+              <p className="text-xs text-ink-400">왼쪽 표에서 채권을 선택하세요</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="mb-3.5">
+            <p className="text-xl font-bold text-ink-900">{bond.bond_name}</p>
+            <p className="mt-1 text-sm text-ink-600">
+              {bond.bond_type ?? "-"} · {bond.credit_rating ?? "무등급"}
+            </p>
+          </div>
+
+          <div className="mb-4 grid grid-cols-2 overflow-hidden rounded-lg bg-navy-950 text-cream-50">
+            {buildInsightMetrics(bond).map((metric, index) => (
+              <div key={metric.label} className={`p-4 ${index !== 0 ? "border-l border-gold-500/40" : ""}`}>
+                <p className="mb-2 text-xs font-black text-gold-400">{metric.label}</p>
+                <p className="text-xl font-bold text-cream-50">{metric.value}</p>
+                <p className="mt-1 text-[11px] leading-tight text-cream-100/60">{metric.caption}</p>
+              </div>
+            ))}
+          </div>
+
+          <dl className="grid grid-cols-2 gap-x-5 gap-y-3.5">
+            {DETAIL_FIELDS.map((field) => (
+              <div key={field.label}>
+                <dt className="text-xs font-extrabold text-ink-400">{field.label}</dt>
+                <dd className="mt-0.5 font-bold text-ink-900">{field.value(bond)}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      )}
     </section>
   );
 }
