@@ -1,20 +1,8 @@
-"use client";
+import BondBridgeDashboard from "@/app/bond-bridge-dashboard";
+import { getBondDashboardData } from "@/lib/bond-data";
 
-import { useState } from "react";
+export default async function HomePage() {
+  const data = await getBondDashboardData();
 
-import { DashboardBody } from "@/components/DashboardBody";
-import { Header } from "@/components/Header";
-
-// Keep the default date aligned with the current Bond Market/Bond Overview data scope.
-const DEFAULT_REFERENCE_DATE = "2026-08-07";
-
-export default function HomePage() {
-  const [referenceDate, setReferenceDate] = useState(DEFAULT_REFERENCE_DATE);
-
-  return (
-    <>
-      <Header referenceDate={referenceDate} onReferenceDateChange={setReferenceDate} />
-      <DashboardBody referenceDate={referenceDate} />
-    </>
-  );
+  return <BondBridgeDashboard data={data} />;
 }

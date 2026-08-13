@@ -117,10 +117,9 @@ export default function BondBridgeDashboard({ data }: Props) {
   const [hoveredTrend, setHoveredTrend] = useState<number | null>(null);
   const [hoveredComparison, setHoveredComparison] = useState<number | null>(null);
 
-  const bondsForDate = useMemo(
-    () => data.bonds.filter((bond) => bond.date === selectedDate),
-    [data.bonds, selectedDate],
-  );
+  // Bond Screener/Overview는 현재 확보된 채권 스냅샷을 유지하고,
+  // 상단 기준일은 Bond Market 데이터만 변경한다.
+  const bondsForDate = data.bonds;
   const market = data.markets.find((item) => item.date === selectedDate);
   const hasDataForDate = bondsForDate.length > 0 && market !== undefined;
   const selectedBond = bondsForDate.find((bond) => bond.id === selectedId) ?? bondsForDate[0];
