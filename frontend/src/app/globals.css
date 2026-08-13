@@ -1,3 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+
+  --color-navy-950: #0d1e34;
+  --color-navy-900: #132c4c;
+  --color-navy-800: #1c3a63;
+
+  --color-gold-400: #d4b567;
+  --color-gold-500: #c8a24a;
+  --color-gold-600: #ad8636;
+
+  --color-cream-50: #f7f4ea;
+  --color-cream-100: #efe9d8;
+  --color-cream-200: #e4dabf;
+
+  --color-ink-900: #17253a;
+  --color-ink-600: #52646b;
+  --color-ink-400: #7c8a91;
+
+  --color-up: #1f9d55;
+  --color-down: #d1453b;
+}
+
 :root {
   --navy-950: #06172f;
   --navy-900: #081d3a;
@@ -14,6 +39,7 @@
   --positive: #16805b;
   --negative: #c84b3c;
   --white: #ffffff;
+  color-scheme: light;
 }
 
 * {

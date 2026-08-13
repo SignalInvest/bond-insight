@@ -1,4 +1,4 @@
-import type { ApiErrorResponse, HealthResponse } from "@/types/api";
+import type { ApiErrorResponse, HealthResponse, MarketResponse } from "@/types/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
@@ -38,4 +38,15 @@ export async function getHealth(): Promise<HealthResponse & { connected: boolean
   } catch {
     return { status: "unavailable", connected: false };
   }
+}
+
+/** 시장금리(최신순). startDate/endDate를 안 주면 진짜 최신값, 주면 그 구간(최신순)만. */
+export async function getMarketRates(
+  params: { limit?: number; startDate?: string; endDate?: string } = {},
+): Promise<MarketResponse> {
+  const query = new URLSearchParams();
+  query.set("limit", String(params.limit ?? 2));
+  if (params.startDate) query.set("start_date", params.startDate);
+  if (params.endDate) query.set("end_date", params.endDate);
+  return apiFetch<MarketResponse>(`/api/market?${query.toString()}`, { cache: "no-store" });
 }
