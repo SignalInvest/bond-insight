@@ -4,6 +4,7 @@ from typing import Any
 import httpx
 
 from backend.app.config import settings
+from backend.app.services.diagnosis_service import build_bond_diagnosis
 
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
@@ -12,7 +13,19 @@ INSTRUCTIONS = """당신은 Bond Insight의 채권 설명 도우미다.
 반드시 제공된 JSON 데이터만 사용하고, 없는 숫자나 사실을 추정하지 않는다.
 투자 권유나 매수·매도 지시를 하지 않는다. 초보자가 이해하기 쉬운 한국어로 설명한다.
 YTM은 수익 지표, modified_duration은 금리 민감도, credit_spread는 국고채 대비 추가 금리로 설명한다.
-누락된 값은 분석하지 말고 '데이터 없음'이라고 밝힌다."""
+누락된 값은 분석하지 말고 '데이터 없음'이라고 밝힌다.
+
+diagnosis 필드(after_tax_yield_approx, duration_sensitivity, investment_priority)를 설명할 때는
+반드시 아래 원칙을 지킨다 (AI 진단 데이터 계약, youngeun/ai-diagnosis/PLAN.md):
+- 각 항목은 {value, status} 형태다. status가 "CALCULATED"가 아니면 value는 없는 것이니
+  그 값을 언급하거나 추정하지 말고, status에 맞는 이유만 설명한다
+  (예: OUTLIER_YTM/EXCLUDED_*/NOT_APPLICABLE/INSUFFICIENT_DATA 등).
+- ytm, coupon_rate 같은 원본 수치로 세후 예상수익률 등을 직접 재계산하지 않는다.
+  이미 계산된 diagnosis 값만 그대로 설명한다.
+- after_tax_yield_approx는 근사값이다. "실제 세후 수익률"이라고 단정하지 말고,
+  "표면이자에 대한 세금만 반영한 근사값"이라는 한계를 함께 언급한다.
+- OUTLIER_YTM은 "YTM이 일반적으로 해석 가능한 범위를 벗어났다"는 관찰일 뿐이다.
+  부실/디폴트 위험 때문이라고 원인을 단정하지 않는다."""
 
 
 def build_bond_context(bond: dict[str, Any], metrics: dict[str, Any] | None) -> dict[str, Any]:
@@ -20,10 +33,11 @@ def build_bond_context(bond: dict[str, Any], metrics: dict[str, Any] | None) -> 
         "bond": {
             key: bond.get(key) for key in (
                 "isin_code", "bond_name", "issuer_name", "bond_type", "coupon_rate",
-                "issue_date", "maturity_date", "kis_rating", "kbp_rating", "nice_rating",
+                "issue_date", "maturity_date", "kis_rating", "kbp_rating", "nice_rating", "fn_rating",
             )
         },
         "metrics": metrics,
+        "diagnosis": build_bond_diagnosis(bond, metrics),
     }
 
 

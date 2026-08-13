@@ -27,6 +27,10 @@ export interface BondRow {
   // status가 "CALCULATED"가 아니면 afterTaxYieldApprox는 항상 null.
   afterTaxYieldApprox: number | null;
   afterTaxYieldStatus: "CALCULATED" | "MISSING_YTM" | "MISSING_COUPON" | "OUTLIER_YTM";
+  // src/analysis/classify_duration_sensitivity.py와 동일 임계값. duration이 null이면 null.
+  durationSensitivity: "저민감" | "중간" | "고민감" | null;
+  // src/analysis/classify_investment_priority.py와 동일 규칙. 신호가 2개 미만이면 null(판정불가).
+  investmentPriority: "안정성 중심" | "수익률 중심" | "균형형" | null;
   tags: string[];
 }
 
