@@ -41,7 +41,16 @@ data/
 | `bond_after_tax_yield.csv` | 세후 예상수익률 근사값 |
 | `bond_duration_sensitivity.csv` | 듀레이션 기반 금리 민감도 분류 |
 | `bond_investment_priority.csv` | 안정성·균형·수익률 중심 분류 |
-| `tableau_bond_dashboard.csv` | 현재 프론트엔드와 Tableau가 사용하는 통합 데이터 |
+| `tableau_bond_dashboard.csv` | 현재 프론트엔드의 2번 통합 데이터 화면에서 사용하는 데이터 |
+
+### 2번 통합 데이터 정제 기준
+
+2026-08-13 기준으로 `tableau_bond_dashboard.csv`는 다음 조건을 모두 충족하는 87개 행만 유지합니다.
+
+- `modified_duration` 값이 있어 금리 변화에 따른 가격 민감도를 비교할 수 있는 채권
+- `credit_rating` 값이 있어 신용위험을 비교할 수 있는 채권
+
+기존 376개 행 가운데 듀레이션과 신용등급 중 하나라도 비어 있는 행을 제외했습니다. 이는 2번 화면에서 `데이터 없음` 또는 신용등급 `-`가 반복적으로 표시되는 문제를 없애고, 모든 행을 동일한 기준으로 비교할 수 있도록 하기 위한 정제입니다. 원본 데이터는 수정하지 않았으며 화면용 가공 파일에만 이 기준을 적용했습니다.
 
 ## Supabase 테이블
 
