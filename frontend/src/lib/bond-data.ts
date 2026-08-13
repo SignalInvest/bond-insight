@@ -28,6 +28,30 @@ const MARKET_RULE_THRESHOLDS = {
   cpiMoveFlatAbs: 0.05,
 };
 
+// src/analysis/calculate_after_tax_yield.py와 동일한 공식/가드 - 그쪽이 원본(source of
+// truth)이다. B안(이 CSV 기반 대시보드)은 Python을 직접 호출할 수 없어 같은 로직을
+// TypeScript로 그대로 옮겨 왔다. 두 구현이 갈라지지 않도록, 이 상수/공식을 바꿀 때는
+// calculate_after_tax_yield.py도 함께 바꿔야 한다.
+const WITHHOLDING_TAX_RATE = 0.154;
+const YTM_DISPLAY_MIN_PCT = -5;
+const YTM_DISPLAY_MAX_PCT = 15;
+
+type AfterTaxYieldStatus = "CALCULATED" | "MISSING_YTM" | "MISSING_COUPON" | "OUTLIER_YTM";
+
+function classifyAfterTaxYieldStatus(
+  ytm: number | null,
+  couponRate: number | null,
+): AfterTaxYieldStatus {
+  if (ytm === null) return "MISSING_YTM";
+  if (couponRate === null) return "MISSING_COUPON";
+  if (ytm < YTM_DISPLAY_MIN_PCT || ytm > YTM_DISPLAY_MAX_PCT) return "OUTLIER_YTM";
+  return "CALCULATED";
+}
+
+function calculateAfterTaxYieldApprox(ytm: number, couponRate: number): number {
+  return ytm - couponRate * WITHHOLDING_TAX_RATE;
+}
+
 function parseCsv(text: string): CsvRecord[] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -233,6 +257,11 @@ export async function getBondDashboardData(): Promise<BondDashboardData> {
       }
 
       const kind = inferKind(row);
+      const couponRate = toNumber(row.coupon_rate);
+      const afterTaxYieldStatus = classifyAfterTaxYieldStatus(ytm, couponRate);
+      const afterTaxYieldApprox =
+        afterTaxYieldStatus === "CALCULATED" ? calculateAfterTaxYieldApprox(ytm, couponRate!) : null;
+
       const baseBond = {
         id: row.isin_code || row.short_code || `bond-${index}`,
         date: row.reference_date || row.date,
@@ -241,7 +270,9 @@ export async function getBondDashboardData(): Promise<BondDashboardData> {
         kind,
         rating: kind === "국채" ? "AAA" : null,
         ytm,
-        couponRate: null,
+        couponRate,
+        afterTaxYieldApprox,
+        afterTaxYieldStatus,
         remainingYears,
         remainingLabel: maturityLabel(remainingYears),
         duration: toNumber(row.modified_duration),
@@ -249,7 +280,7 @@ export async function getBondDashboardData(): Promise<BondDashboardData> {
         volume,
         tradingValue,
         maturityDate: row.maturity_date,
-        issueDate: null,
+        issueDate: row.issue_date || null,
         treasury3y,
         treasury10y,
         baseRate,

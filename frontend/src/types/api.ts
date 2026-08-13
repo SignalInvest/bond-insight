@@ -62,6 +62,10 @@ export interface BondSnapshotRow {
   macaulay_duration: number | null;
   modified_duration: number | null;
   relative_yield_spread: number | null;
+  // backend/app/services/bond_snapshot_service.py에서 계산해 붙임 (src/analysis/calculate_after_tax_yield.py와 동일 공식/가드).
+  // status가 "CALCULATED"가 아니면 approx는 항상 null — status를 반드시 같이 확인할 것.
+  after_tax_yield_approx: number | null;
+  after_tax_yield_status: "CALCULATED" | "MISSING_YTM" | "MISSING_COUPON" | "OUTLIER_YTM";
 }
 
 // backend/app/api/bond_snapshot.py GET /api/bond-snapshot 응답

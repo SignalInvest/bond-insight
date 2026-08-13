@@ -14,7 +14,15 @@ interface InsightMetric {
   caption: string;
 }
 
-const WITHHOLDING_TAX_RATE = 0.154;
+function afterTaxYieldUnavailableReason(bond: BondSnapshotRow): string {
+  if (bond.after_tax_yield_status === "OUTLIER_YTM") {
+    return "YTM이 일반적 해석 범위를 벗어나 근사값을 표시하지 않아요";
+  }
+  if (bond.after_tax_yield_status === "MISSING_COUPON") {
+    return "표면금리 데이터가 없어요";
+  }
+  return "YTM 데이터가 없어요";
+}
 
 function formatKoreanNumber(value: number, unit: string): string {
   const abs = Math.abs(value);
@@ -42,9 +50,13 @@ function buildInsightMetrics(bond: BondSnapshotRow): InsightMetric[] {
       caption: `${bond.reference_date} 기준 (Supabase)`,
     },
     {
-      label: "실질수익률 (세후)",
-      value: `${(bond.ytm * (1 - WITHHOLDING_TAX_RATE)).toFixed(2)}%`,
-      caption: `세전 YTM ${bond.ytm.toFixed(2)}% × (1 − 이자소득세 15.4%)`,
+      label: "세후 예상수익률",
+      value:
+        bond.after_tax_yield_approx !== null ? `${bond.after_tax_yield_approx.toFixed(2)}%` : "데이터 없음",
+      caption:
+        bond.after_tax_yield_approx !== null
+          ? `세전 YTM ${bond.ytm.toFixed(2)}% − 표면금리 × 이자소득세 15.4% (근사값, Supabase 계산)`
+          : afterTaxYieldUnavailableReason(bond),
     },
     {
       label: "신용 스프레드",
@@ -127,7 +139,7 @@ export function BondInsight({ selectedFields: bond }: BondInsightProps) {
 
       {!bond ? (
         <div className="flex flex-col gap-3">
-          {["오늘 거래량 (유동성)", "실질수익률 (세후)", "신용 스프레드", "Duration (금리 민감도)"].map((label) => (
+          {["오늘 거래량 (유동성)", "세후 예상수익률", "신용 스프레드", "Duration (금리 민감도)"].map((label) => (
             <div key={label} className="rounded bg-cream-50 p-3">
               <p className="text-xs text-ink-600">{label}</p>
               <p className="text-lg font-bold text-navy-900">-</p>

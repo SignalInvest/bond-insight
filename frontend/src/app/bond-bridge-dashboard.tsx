@@ -193,7 +193,7 @@ export default function BondBridgeDashboard({ data }: Props) {
               <div className="section-heading">
                 <span>01</span>
                 <div>
-                  <h1 id="market-title">BOND MARKET</h1>
+                  <h1 id="market-title">BOND MARKET OVERVIEW</h1>
                   <p>지금 채권시장은 어떤 상황일까요?</p>
                 </div>
               </div>
@@ -330,7 +330,7 @@ export default function BondBridgeDashboard({ data }: Props) {
                     <div className="section-heading compact">
                       <span>03</span>
                       <div>
-                        <h2 id="detail-title">BOND OVERVIEW</h2>
+                        <h2 id="detail-title">BOND INSIGHT</h2>
                         <p>좌측에서 채권을 선택하면 상세 정보가 표시됩니다.</p>
                       </div>
                     </div>
@@ -346,10 +346,17 @@ export default function BondBridgeDashboard({ data }: Props) {
                   </div>
 
                   <div className="navy-kpis">
-                    <div><span>만기수익률</span><strong>{formatPercent(selectedBond.ytm)}</strong></div>
                     <div><span>현재가격</span><strong>{formatPrice(selectedBond.currentPrice)}</strong></div>
                     <div><span>잔존만기</span><strong>{selectedBond.remainingLabel}</strong></div>
-                    <div><span>신용등급</span><strong>{selectedBond.rating ?? "미확보"}</strong></div>
+                    <div><span>만기수익률</span><strong>{formatPercent(selectedBond.ytm)}</strong></div>
+                    <div>
+                      <span>세후 예상수익률</span>
+                      <strong>
+                        {selectedBond.afterTaxYieldApprox === null
+                          ? "데이터 없음"
+                          : `${selectedBond.afterTaxYieldApprox.toFixed(2)}%`}
+                      </strong>
+                    </div>
                   </div>
 
                   <dl className="detail-list">
