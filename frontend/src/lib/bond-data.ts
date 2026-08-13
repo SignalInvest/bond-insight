@@ -13,6 +13,14 @@ const DASHBOARD_CSV = path.join(
   "tableau_bond_dashboard.csv",
 );
 
+const MARKET_RATES_CSV = path.join(
+  process.cwd(),
+  "..",
+  "data",
+  "processed",
+  "market_rates_2026-08-01_07.csv",
+);
+
 const MARKET_RULE_THRESHOLDS = {
   termSpreadFlatAbs: 0.1,
   policySpreadFlatAbs: 0.1,
@@ -186,8 +194,12 @@ function buildMarketSummary(
 }
 
 export async function getBondDashboardData(): Promise<BondDashboardData> {
-  const text = await readFile(DASHBOARD_CSV, "utf8");
+  const [text, marketRatesText] = await Promise.all([
+    readFile(DASHBOARD_CSV, "utf8"),
+    readFile(MARKET_RATES_CSV, "utf8"),
+  ]);
   const records = parseCsv(text);
+  const marketRateRecords = parseCsv(marketRatesText);
 
   const bonds = records
     .map((row, index): BondRow | null => {
@@ -253,23 +265,32 @@ export async function getBondDashboardData(): Promise<BondDashboardData> {
     .filter((bond): bond is BondRow => bond !== null)
     .sort((a, b) => b.tradingValue - a.tradingValue);
 
-  const availableDates = Array.from(new Set(bonds.map((bond) => bond.date))).sort();
-  const markets = availableDates.map((date, index) => {
-    const record = records.find((row) => (row.reference_date || row.date) === date);
-    const sample = bonds.find((bond) => bond.date === date) ?? bonds[0];
-    const previousSample = index > 0 ? bonds.find((bond) => bond.date === availableDates[index - 1]) : undefined;
-    const summary = buildMarketSummary(sample, evaluateMarketRules(sample, previousSample));
+  const availableDates = marketRateRecords.map((row) => row.date).filter(Boolean).sort();
+  const cpi = bonds[0]?.cpi ?? null;
+  const markets = marketRateRecords.map((row, index) => {
+    const previous = index > 0 ? marketRateRecords[index - 1] : undefined;
+    const snapshot = {
+      policySpread: toNumber(row.policy_spread) ?? 0,
+      yieldSpread: toNumber(row.yield_spread) ?? 0,
+      treasury3y: toNumber(row.treasury_3y) ?? 0,
+      cpi,
+    };
+    const previousSnapshot = previous
+      ? { treasury3y: toNumber(previous.treasury_3y) ?? 0, cpi }
+      : undefined;
+    const summary = buildMarketSummary(snapshot, evaluateMarketRules(snapshot, previousSnapshot));
+    const isWeekendFreeze = row.date === "2026-08-01" || row.date === "2026-08-02";
 
     return {
-      date,
-      marketRateDate: record?.market_rate_date || sample.date,
-      baseRate: sample.baseRate,
-      treasury3y: sample.treasury3y,
-      treasury10y: sample.treasury10y,
-      yieldSpread: sample.yieldSpread,
-      creditSpread: sample.creditSpread,
-      policySpread: sample.policySpread,
-      cpi: sample.cpi,
+      date: row.date,
+      marketRateDate: isWeekendFreeze ? "2026-07-31" : row.date,
+      baseRate: toNumber(row.base_rate) ?? 0,
+      treasury3y: snapshot.treasury3y,
+      treasury10y: toNumber(row.treasury_10y) ?? 0,
+      yieldSpread: snapshot.yieldSpread,
+      creditSpread: toNumber(row.credit_spread) ?? 0,
+      policySpread: snapshot.policySpread,
+      cpi,
       scenario: summary.scenario,
       summary: summary.summary,
       summaryTitle: summary.summaryTitle,
