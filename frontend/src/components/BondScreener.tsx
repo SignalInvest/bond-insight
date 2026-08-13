@@ -3,26 +3,9 @@
 import { Loader2, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import {
-  MATURITY_BUCKETS,
-  buildDisplayTags,
-  formatRemainingMaturity,
-  maturityBucketOf,
-  type DisplayTag,
-  type MaturityTag,
-  type StrategyTag,
-} from "@/lib/bondSnapshot";
+import { MATURITY_BUCKETS, formatRemainingMaturity, maturityBucketOf } from "@/lib/bondSnapshot";
 import { useBondSnapshots } from "@/lib/useBondSnapshots";
 import type { BondSnapshotRow } from "@/types/api";
-
-const TAG_STYLES: Record<string, string> = {
-  "안정성 중심": "bg-navy-900/5 text-navy-800",
-  "수익률 중심": "bg-gold-500/15 text-gold-700",
-  "단기채": "bg-navy-900/5 text-navy-800",
-  "장기채": "bg-navy-900/5 text-navy-800",
-  "거래 활발": "bg-up/10 text-up",
-  "수익률 높음": "bg-up/10 text-up",
-};
 
 interface BondScreenerProps {
   referenceDate: string;
@@ -30,22 +13,27 @@ interface BondScreenerProps {
   onSelectBond?: (bond: BondSnapshotRow | null) => void;
 }
 
+// 사용자가 Tableau에서 쓰던 필터 계산식 그대로 이식.
+const STABLE_RATINGS = new Set(["AAA", "AA+", "AA0"]); // "안정성 중심" = 국채이거나 신용등급 AA0 이상
+const HIGH_YIELD_THRESHOLD = 4; // "높은 수익률" = YTM 4% 이상
+const SHORT_TERM_MAX_DAYS = 1095; // "단기" = 잔존만기 3년(1095일) 이하, "장기"는 초과
+
 export function BondScreener({ referenceDate, selectedIsin, onSelectBond }: BondScreenerProps) {
   const snapshot = useBondSnapshots(referenceDate);
   const bonds = useMemo(() => (snapshot.status === "loaded" ? snapshot.bonds : []), [snapshot]);
-  const tagsByIsin = useMemo(() => buildDisplayTags(bonds), [bonds]);
 
-  const [bondType, setBondType] = useState<string | null>(null);
-  const [strategy, setStrategy] = useState<StrategyTag | null>(null);
-  const [maturityTag, setMaturityTag] = useState<MaturityTag | null>(null);
+  const [stableOnly, setStableOnly] = useState(false);
+  const [highYieldOnly, setHighYieldOnly] = useState(false);
+  const [shortTerm, setShortTerm] = useState(false);
+  const [longTerm, setLongTerm] = useState(false);
+  const [govBond, setGovBond] = useState(false);
+  const [corpBond, setCorpBond] = useState(false);
   const [ratingFilter, setRatingFilter] = useState<string>("전체");
   const [maturityBucket, setMaturityBucket] = useState<string>("전체");
   const [search, setSearch] = useState("");
 
-  const bondTypeOptions = useMemo(
-    () => Array.from(new Set(bonds.map((b) => b.bond_type).filter((v): v is string => v !== null))).sort(),
-    [bonds],
-  );
+  const anyFilterActive = stableOnly || highYieldOnly || shortTerm || longTerm || govBond || corpBond;
+
   const ratingOptions = useMemo(
     () => Array.from(new Set(bonds.map((b) => b.credit_rating).filter((v): v is string => v !== null))).sort(),
     [bonds],
@@ -53,11 +41,32 @@ export function BondScreener({ referenceDate, selectedIsin, onSelectBond }: Bond
 
   const filteredBonds = useMemo(() => {
     const keyword = search.trim().toLowerCase();
+
     return bonds.filter((bond) => {
-      const tags = tagsByIsin.get(bond.isin_code) ?? [];
-      if (bondType && bond.bond_type !== bondType) return false;
-      if (strategy && !tags.includes(strategy)) return false;
-      if (maturityTag && !tags.includes(maturityTag)) return false;
+      // 안정성 중심: 선택 안 했으면 통과, 선택했으면 국채이거나 신용등급 AA0 이상만
+      if (stableOnly) {
+        const isStable = bond.bond_type === "국채" || (bond.credit_rating !== null && STABLE_RATINGS.has(bond.credit_rating));
+        if (!isStable) return false;
+      }
+
+      // 높은 수익률: 선택 안 했으면 통과, 선택했으면 YTM 4% 이상만
+      if (highYieldOnly && bond.ytm < HIGH_YIELD_THRESHOLD) return false;
+
+      // 단기/장기: 같은 그룹 내에서는 OR — 단기·장기 둘 다 선택하면 둘 다 보임, 하나도 선택 안 하면 전부 통과
+      if (shortTerm || longTerm) {
+        const days = bond.remaining_days;
+        const matchesShort = shortTerm && days !== null && days <= SHORT_TERM_MAX_DAYS;
+        const matchesLong = longTerm && days !== null && days > SHORT_TERM_MAX_DAYS;
+        if (!matchesShort && !matchesLong) return false;
+      }
+
+      // 국채/회사채: 같은 그룹 내에서는 OR
+      if (govBond || corpBond) {
+        const matchesGov = govBond && bond.bond_type === "국채";
+        const matchesCorp = corpBond && bond.bond_type === "회사채";
+        if (!matchesGov && !matchesCorp) return false;
+      }
+
       if (ratingFilter !== "전체" && bond.credit_rating !== ratingFilter) return false;
       if (maturityBucket !== "전체" && maturityBucketOf(bond) !== maturityBucket) return false;
       if (
@@ -69,12 +78,15 @@ export function BondScreener({ referenceDate, selectedIsin, onSelectBond }: Bond
       }
       return true;
     });
-  }, [bonds, tagsByIsin, bondType, strategy, maturityTag, ratingFilter, maturityBucket, search]);
+  }, [bonds, stableOnly, highYieldOnly, shortTerm, longTerm, govBond, corpBond, ratingFilter, maturityBucket, search]);
 
   function resetGroups() {
-    setBondType(null);
-    setStrategy(null);
-    setMaturityTag(null);
+    setStableOnly(false);
+    setHighYieldOnly(false);
+    setShortTerm(false);
+    setLongTerm(false);
+    setGovBond(false);
+    setCorpBond(false);
   }
 
   return (
@@ -102,52 +114,16 @@ export function BondScreener({ referenceDate, selectedIsin, onSelectBond }: Bond
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
-        <FilterButton label="전체" active={!bondType && !strategy && !maturityTag} onClick={resetGroups} />
-        <FilterButton label="국채" active={bondType === "국채"} onClick={() => setBondType(bondType === "국채" ? null : "국채")} />
-        <FilterButton
-          label="회사채"
-          active={bondType === "회사채"}
-          onClick={() => setBondType(bondType === "회사채" ? null : "회사채")}
-        />
-        <FilterButton
-          label="안정성 중심"
-          active={strategy === "안정성 중심"}
-          onClick={() => setStrategy(strategy === "안정성 중심" ? null : "안정성 중심")}
-        />
-        <FilterButton
-          label="수익률 중심"
-          active={strategy === "수익률 중심"}
-          onClick={() => setStrategy(strategy === "수익률 중심" ? null : "수익률 중심")}
-        />
-        <FilterButton
-          label="단기채"
-          active={maturityTag === "단기채"}
-          onClick={() => setMaturityTag(maturityTag === "단기채" ? null : "단기채")}
-        />
-        <FilterButton
-          label="장기채"
-          active={maturityTag === "장기채"}
-          onClick={() => setMaturityTag(maturityTag === "장기채" ? null : "장기채")}
-        />
+        <FilterButton label="전체" active={!anyFilterActive} onClick={resetGroups} />
+        <FilterButton label="국채" active={govBond} onClick={() => setGovBond((v) => !v)} />
+        <FilterButton label="회사채" active={corpBond} onClick={() => setCorpBond((v) => !v)} />
+        <FilterButton label="안정성 중심" active={stableOnly} onClick={() => setStableOnly((v) => !v)} />
+        <FilterButton label="높은 수익률" active={highYieldOnly} onClick={() => setHighYieldOnly((v) => !v)} />
+        <FilterButton label="단기" active={shortTerm} onClick={() => setShortTerm((v) => !v)} />
+        <FilterButton label="장기" active={longTerm} onClick={() => setLongTerm((v) => !v)} />
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <label className="flex flex-col gap-1 text-xs text-ink-600">
-          채권 종류
-          <select
-            value={bondType ?? "전체"}
-            onChange={(event) => setBondType(event.target.value === "전체" ? null : event.target.value)}
-            className="rounded-lg border border-gold-500/30 bg-white px-2 py-1.5 text-sm text-navy-900"
-          >
-            <option value="전체">전체</option>
-            {bondTypeOptions.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </label>
-
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <label className="flex flex-col gap-1 text-xs text-ink-600">
           신용등급
           <select
@@ -231,7 +207,6 @@ export function BondScreener({ referenceDate, selectedIsin, onSelectBond }: Bond
             ) : (
               filteredBonds.map((bond) => {
                 const isSelected = bond.isin_code === selectedIsin;
-                const tags: DisplayTag[] = tagsByIsin.get(bond.isin_code) ?? [];
                 return (
                   <tr
                     key={bond.isin_code}
@@ -240,19 +215,7 @@ export function BondScreener({ referenceDate, selectedIsin, onSelectBond }: Bond
                       isSelected ? "bg-cream-100" : ""
                     }`}
                   >
-                    <td className="px-3 py-2">
-                      <p className="font-medium text-navy-900">{bond.bond_name}</p>
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${TAG_STYLES[tag] ?? "bg-cream-100 text-ink-600"}`}
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
+                    <td className="px-3 py-2 font-medium text-navy-900">{bond.bond_name}</td>
                     <td className="px-3 py-2 text-ink-700">{bond.issuer ?? "-"}</td>
                     <td className="px-3 py-2 text-ink-700">{bond.bond_type ?? "-"}</td>
                     <td className="px-3 py-2 text-ink-700">{bond.credit_rating ?? "-"}</td>
