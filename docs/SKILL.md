@@ -150,7 +150,7 @@ frontend/src/
 | 구성요소 | 플랫폼 | URL | 배포 브랜치 |
 | --- | --- | --- | --- |
 | Backend (FastAPI) | Render | `https://bond-insight-backend.onrender.com` | `feature/yunseo` (main 아님, PR 시도했으나 organization 접근 문제로 보류) |
-| Frontend (Next.js) | Vercel | `https://frontend-sigma-gold-68.vercel.app` | `feature/yunseo` |
+| Frontend (Next.js) | Vercel | `https://bond-insight-park-chan-sik.vercel.app` | `main` |
 
 ### 5-1. 배포 전 반드시 고쳐야 했던 것들
 
