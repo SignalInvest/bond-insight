@@ -6,6 +6,7 @@ from backend.app.config import settings
 
 from backend.app.api.database import router as database_router
 from backend.app.api.bonds import router as bonds_router
+from backend.app.api.bond_snapshot import router as bond_snapshot_router
 from backend.app.api.compare import router as compare_router
 from backend.app.api.market import router as market_router
 from backend.app.api.analysis import router as analysis_router
@@ -38,6 +39,7 @@ app.include_router(market_router)
 app.include_router(compare_router)
 app.include_router(compare_post_router)
 app.include_router(bonds_router)
+app.include_router(bond_snapshot_router)
 app.include_router(analysis_router)
 app.include_router(ai_router)
 

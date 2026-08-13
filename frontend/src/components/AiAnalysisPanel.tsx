@@ -3,8 +3,8 @@
 import { Loader2, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import type { MockBond } from "@/data/mockBonds";
 import { ApiError, explainBond } from "@/lib/api";
+import type { BondSnapshotRow } from "@/types/api";
 
 type ExplainState =
   | { status: "loading" }
@@ -13,7 +13,7 @@ type ExplainState =
   | { status: "error"; message: string };
 
 interface AiAnalysisPanelProps {
-  bond: MockBond;
+  bond: BondSnapshotRow;
   onClose: () => void;
 }
 
@@ -23,22 +23,23 @@ export function AiAnalysisPanel({ bond, onClose }: AiAnalysisPanelProps) {
   useEffect(() => {
     let cancelled = false;
 
-    explainBond(bond.isin)
+    explainBond(bond.isin_code)
       .then((response) => {
         if (cancelled) return;
         setResolved({
-          isin: bond.isin,
+          isin: bond.isin_code,
           state: { status: "loaded", explanation: response.explanation, model: response.model },
         });
       })
       .catch((error: unknown) => {
         if (cancelled) return;
-        // mock ISIN이 Supabase에 없는 채권이면 404(NOT_FOUND) — docs/SKILL_1034.md 3-5
+        // bond_snapshot(358건) 중 극소수는 bonds 테이블(29,088건)에 없을 수 있음 — 404(NOT_FOUND)
+        // (docs/SKILL_1035.md 1절: 358/359건은 겹침을 이미 확인함)
         if (error instanceof ApiError && error.code === "NOT_FOUND") {
-          setResolved({ isin: bond.isin, state: { status: "not-found" } });
+          setResolved({ isin: bond.isin_code, state: { status: "not-found" } });
         } else {
           setResolved({
-            isin: bond.isin,
+            isin: bond.isin_code,
             state: { status: "error", message: error instanceof Error ? error.message : "알 수 없는 오류" },
           });
         }
@@ -47,10 +48,10 @@ export function AiAnalysisPanel({ bond, onClose }: AiAnalysisPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [bond.isin]);
+  }, [bond.isin_code]);
 
   // resolved가 이전 채권에 대한 응답이면 render-time에 loading으로 파생 (useMarketSnapshot과 동일 패턴)
-  const state: ExplainState = resolved && resolved.isin === bond.isin ? resolved.state : { status: "loading" };
+  const state: ExplainState = resolved && resolved.isin === bond.isin_code ? resolved.state : { status: "loading" };
 
   return (
     <>
@@ -61,7 +62,7 @@ export function AiAnalysisPanel({ bond, onClose }: AiAnalysisPanelProps) {
             <Sparkles size={18} className="text-gold-400" />
             <div>
               <p className="text-sm font-bold">AI Analysis</p>
-              <p className="text-xs text-cream-100/70">{bond.bondName}</p>
+              <p className="text-xs text-cream-100/70">{bond.bond_name}</p>
             </div>
           </div>
           <button

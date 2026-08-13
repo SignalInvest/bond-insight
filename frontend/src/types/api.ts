@@ -37,3 +37,35 @@ export interface AiExplainResponse {
   explanation: string;
   model: string;
 }
+
+// backend/app/services/bond_snapshot_service.py 한 행 (bond_snapshot 테이블, 2026-08-07 358건)
+// remaining_days는 "일" 단위 — 년 단위로 쓰려면 반드시 365(.25)로 나눌 것 (docs/SKILL_1035.md 1절).
+// relative_yield_spread가 "신용 스프레드"다. real_yield 컬럼은 업로드하지 않았음(1절 참고).
+export interface BondSnapshotRow {
+  id: number;
+  isin_code: string;
+  reference_date: string;
+  bond_name: string;
+  issuer: string | null;
+  bond_type: string | null;
+  credit_rating: string | null;
+  issue_date: string | null;
+  maturity_date: string;
+  remaining_days: number | null;
+  coupon_rate: number | null;
+  close_price: number;
+  ytm: number;
+  volume: number | null;
+  trading_value: number | null;
+  has_option: boolean | null;
+  is_fixed_rate: boolean | null;
+  macaulay_duration: number | null;
+  modified_duration: number | null;
+  relative_yield_spread: number | null;
+}
+
+// backend/app/api/bond_snapshot.py GET /api/bond-snapshot 응답
+export interface BondSnapshotResponse {
+  count: number;
+  data: BondSnapshotRow[];
+}

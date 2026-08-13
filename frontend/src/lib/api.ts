@@ -1,4 +1,10 @@
-import type { AiExplainResponse, ApiErrorResponse, HealthResponse, MarketResponse } from "@/types/api";
+import type {
+  AiExplainResponse,
+  ApiErrorResponse,
+  BondSnapshotResponse,
+  HealthResponse,
+  MarketResponse,
+} from "@/types/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
@@ -49,6 +55,15 @@ export async function getMarketRates(
   if (params.startDate) query.set("start_date", params.startDate);
   if (params.endDate) query.set("end_date", params.endDate);
   return apiFetch<MarketResponse>(`/api/market?${query.toString()}`, { cache: "no-store" });
+}
+
+/** Bond Screener용 — 359건 정도라 페이지네이션 없이 한 번에 전부 받아온다(docs/SKILL_1035.md 2-4). */
+export async function getBondSnapshots(
+  params: { referenceDate?: string } = {},
+): Promise<BondSnapshotResponse> {
+  const query = new URLSearchParams();
+  if (params.referenceDate) query.set("reference_date", params.referenceDate);
+  return apiFetch<BondSnapshotResponse>(`/api/bond-snapshot?${query.toString()}`, { cache: "no-store" });
 }
 
 /** AI Analysis 패널용 — ISIN이 Supabase에 없으면 ApiError(status 404, code "NOT_FOUND")를 던진다. */

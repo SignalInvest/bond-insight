@@ -1,20 +1,19 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { MOCK_BONDS, type BondType, type MaturityTag, type MockBond, type StrategyTag } from "@/data/mockBonds";
-
-const MATURITY_BUCKETS = ["1년 이하", "1~3년", "3~5년", "5~10년", "10년 초과"] as const;
-type MaturityBucket = (typeof MATURITY_BUCKETS)[number];
-
-function maturityBucketOf(years: number): MaturityBucket {
-  if (years <= 1) return "1년 이하";
-  if (years <= 3) return "1~3년";
-  if (years <= 5) return "3~5년";
-  if (years <= 10) return "5~10년";
-  return "10년 초과";
-}
+import {
+  MATURITY_BUCKETS,
+  buildDisplayTags,
+  formatRemainingMaturity,
+  maturityBucketOf,
+  type DisplayTag,
+  type MaturityTag,
+  type StrategyTag,
+} from "@/lib/bondSnapshot";
+import { useBondSnapshots } from "@/lib/useBondSnapshots";
+import type { BondSnapshotRow } from "@/types/api";
 
 const TAG_STYLES: Record<string, string> = {
   "안정성 중심": "bg-navy-900/5 text-navy-800",
@@ -26,37 +25,51 @@ const TAG_STYLES: Record<string, string> = {
 };
 
 interface BondScreenerProps {
+  referenceDate: string;
   selectedIsin?: string | null;
-  onSelectBond?: (bond: MockBond | null) => void;
+  onSelectBond?: (bond: BondSnapshotRow | null) => void;
 }
 
-export function BondScreener({ selectedIsin, onSelectBond }: BondScreenerProps) {
-  const [bondType, setBondType] = useState<BondType | null>(null);
+export function BondScreener({ referenceDate, selectedIsin, onSelectBond }: BondScreenerProps) {
+  const snapshot = useBondSnapshots(referenceDate);
+  const bonds = useMemo(() => (snapshot.status === "loaded" ? snapshot.bonds : []), [snapshot]);
+  const tagsByIsin = useMemo(() => buildDisplayTags(bonds), [bonds]);
+
+  const [bondType, setBondType] = useState<string | null>(null);
   const [strategy, setStrategy] = useState<StrategyTag | null>(null);
   const [maturityTag, setMaturityTag] = useState<MaturityTag | null>(null);
   const [ratingFilter, setRatingFilter] = useState<string>("전체");
   const [maturityBucket, setMaturityBucket] = useState<string>("전체");
   const [search, setSearch] = useState("");
 
+  const bondTypeOptions = useMemo(
+    () => Array.from(new Set(bonds.map((b) => b.bond_type).filter((v): v is string => v !== null))).sort(),
+    [bonds],
+  );
   const ratingOptions = useMemo(
-    () => ["전체", ...Array.from(new Set(MOCK_BONDS.map((bond) => bond.creditRating))).sort()],
-    [],
+    () => Array.from(new Set(bonds.map((b) => b.credit_rating).filter((v): v is string => v !== null))).sort(),
+    [bonds],
   );
 
   const filteredBonds = useMemo(() => {
     const keyword = search.trim().toLowerCase();
-    return MOCK_BONDS.filter((bond) => {
-      if (bondType && bond.bondType !== bondType) return false;
-      if (strategy && !bond.tags.includes(strategy)) return false;
-      if (maturityTag && !bond.tags.includes(maturityTag)) return false;
-      if (ratingFilter !== "전체" && bond.creditRating !== ratingFilter) return false;
-      if (maturityBucket !== "전체" && maturityBucketOf(bond.remainingMaturityYears) !== maturityBucket) return false;
-      if (keyword && !bond.bondName.toLowerCase().includes(keyword) && !bond.isin.toLowerCase().includes(keyword)) {
+    return bonds.filter((bond) => {
+      const tags = tagsByIsin.get(bond.isin_code) ?? [];
+      if (bondType && bond.bond_type !== bondType) return false;
+      if (strategy && !tags.includes(strategy)) return false;
+      if (maturityTag && !tags.includes(maturityTag)) return false;
+      if (ratingFilter !== "전체" && bond.credit_rating !== ratingFilter) return false;
+      if (maturityBucket !== "전체" && maturityBucketOf(bond) !== maturityBucket) return false;
+      if (
+        keyword &&
+        !bond.bond_name.toLowerCase().includes(keyword) &&
+        !bond.isin_code.toLowerCase().includes(keyword)
+      ) {
         return false;
       }
       return true;
     });
-  }, [bondType, strategy, maturityTag, ratingFilter, maturityBucket, search]);
+  }, [bonds, tagsByIsin, bondType, strategy, maturityTag, ratingFilter, maturityBucket, search]);
 
   function resetGroups() {
     setBondType(null);
@@ -69,12 +82,23 @@ export function BondScreener({ selectedIsin, onSelectBond }: BondScreenerProps) 
       aria-labelledby="bond-screener-title"
       className="rounded-2xl border border-gold-500/30 bg-white p-5 shadow-sm shadow-navy-900/5"
     >
-      <div className="mb-4">
-        <h2 id="bond-screener-title" className="flex items-baseline gap-2">
-          <span className="text-sm font-bold text-gold-600">02</span>
-          <span className="text-lg font-bold text-navy-900">BOND SCREENER</span>
-        </h2>
-        <p className="text-xs text-ink-600">조건을 선택하거나 검색하여 관심 채권을 찾아보세요.</p>
+      <div className="mb-4 flex items-end justify-between gap-4">
+        <div>
+          <h2 id="bond-screener-title" className="flex items-baseline gap-2">
+            <span className="text-sm font-bold text-gold-600">02</span>
+            <span className="text-lg font-bold text-navy-900">BOND SCREENER</span>
+          </h2>
+          <p className="text-xs text-ink-600">조건을 선택하거나 검색하여 관심 채권을 찾아보세요.</p>
+        </div>
+        <span className="text-xs text-ink-400">
+          {snapshot.status === "loaded"
+            ? bonds.length > 0
+              ? `${referenceDate} 기준 ${bonds.length}건 (Supabase)`
+              : "선택한 날짜에는 채권 데이터가 없어요"
+            : snapshot.status === "error"
+              ? "백엔드 연결 실패"
+              : "불러오는 중..."}
+        </span>
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
@@ -112,12 +136,15 @@ export function BondScreener({ selectedIsin, onSelectBond }: BondScreenerProps) 
           채권 종류
           <select
             value={bondType ?? "전체"}
-            onChange={(event) => setBondType(event.target.value === "전체" ? null : (event.target.value as BondType))}
+            onChange={(event) => setBondType(event.target.value === "전체" ? null : event.target.value)}
             className="rounded-lg border border-gold-500/30 bg-white px-2 py-1.5 text-sm text-navy-900"
           >
             <option value="전체">전체</option>
-            <option value="국채">국채</option>
-            <option value="회사채">회사채</option>
+            {bondTypeOptions.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
           </select>
         </label>
 
@@ -128,6 +155,7 @@ export function BondScreener({ selectedIsin, onSelectBond }: BondScreenerProps) 
             onChange={(event) => setRatingFilter(event.target.value)}
             className="rounded-lg border border-gold-500/30 bg-white px-2 py-1.5 text-sm text-navy-900"
           >
+            <option value="전체">전체</option>
             {ratingOptions.map((rating) => (
               <option key={rating} value={rating}>
                 {rating}
@@ -180,7 +208,21 @@ export function BondScreener({ selectedIsin, onSelectBond }: BondScreenerProps) 
             </tr>
           </thead>
           <tbody>
-            {filteredBonds.length === 0 ? (
+            {snapshot.status === "loading" ? (
+              <tr>
+                <td colSpan={7} className="px-3 py-6 text-center text-ink-400">
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 size={14} className="animate-spin" /> 불러오는 중...
+                  </span>
+                </td>
+              </tr>
+            ) : snapshot.status === "error" ? (
+              <tr>
+                <td colSpan={7} className="px-3 py-6 text-center text-down">
+                  채권 데이터를 불러오지 못했어요. 백엔드가 켜져 있는지 확인해 주세요.
+                </td>
+              </tr>
+            ) : filteredBonds.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-3 py-6 text-center text-ink-400">
                   조건에 맞는 채권이 없어요.
@@ -188,19 +230,20 @@ export function BondScreener({ selectedIsin, onSelectBond }: BondScreenerProps) 
               </tr>
             ) : (
               filteredBonds.map((bond) => {
-                const isSelected = bond.isin === selectedIsin;
+                const isSelected = bond.isin_code === selectedIsin;
+                const tags: DisplayTag[] = tagsByIsin.get(bond.isin_code) ?? [];
                 return (
                   <tr
-                    key={bond.isin}
+                    key={bond.isin_code}
                     onClick={() => onSelectBond?.(bond)}
                     className={`cursor-pointer border-t border-gold-500/10 transition-colors hover:bg-cream-50 ${
                       isSelected ? "bg-cream-100" : ""
                     }`}
                   >
                     <td className="px-3 py-2">
-                      <p className="font-medium text-navy-900">{bond.bondName}</p>
+                      <p className="font-medium text-navy-900">{bond.bond_name}</p>
                       <div className="mt-1 flex flex-wrap gap-1">
-                        {bond.tags.map((tag) => (
+                        {tags.map((tag) => (
                           <span
                             key={tag}
                             className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${TAG_STYLES[tag] ?? "bg-cream-100 text-ink-600"}`}
@@ -210,12 +253,12 @@ export function BondScreener({ selectedIsin, onSelectBond }: BondScreenerProps) 
                         ))}
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-ink-700">{bond.issuer}</td>
-                    <td className="px-3 py-2 text-ink-700">{bond.bondType}</td>
-                    <td className="px-3 py-2 text-ink-700">{bond.creditRating}</td>
-                    <td className="px-3 py-2 text-ink-700">{bond.remainingMaturityYears.toFixed(2)}년</td>
+                    <td className="px-3 py-2 text-ink-700">{bond.issuer ?? "-"}</td>
+                    <td className="px-3 py-2 text-ink-700">{bond.bond_type ?? "-"}</td>
+                    <td className="px-3 py-2 text-ink-700">{bond.credit_rating ?? "-"}</td>
+                    <td className="px-3 py-2 text-ink-700">{formatRemainingMaturity(bond)}</td>
                     <td className="px-3 py-2 font-semibold text-up">{bond.ytm.toFixed(2)}%</td>
-                    <td className="px-3 py-2 text-ink-700">{bond.price.toLocaleString()}원</td>
+                    <td className="px-3 py-2 text-ink-700">{bond.close_price.toLocaleString()}원</td>
                   </tr>
                 );
               })

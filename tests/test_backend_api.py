@@ -42,7 +42,7 @@ class FakeQuery:
         self.rows = [
             row for row in self.rows
             if needle in row.get("bond_name", "").lower()
-            or needle in row.get("issuer_name", "").lower()
+            or needle in (row.get("issuer_name") or row.get("issuer") or "").lower()
             or needle in row.get("isin_code", "").lower()
         ]
         return self
@@ -80,6 +80,24 @@ class FakeDatabase:
         "bond_metrics": [
             {"isin_code": "KR1", "reference_date": "2026-08-07", "remaining_days": 730, "remaining_years": 2.0, "maturity_status": "NORMAL", "maturity_bucket": "1~3년", "macaulay_duration": 1.9, "modified_duration": 1.8, "duration_status": "CALCULATED", "schedule_estimated": False, "stub_period": False},
             {"isin_code": "KR2", "reference_date": "2026-08-07", "remaining_days": 1826, "remaining_years": 5.0, "maturity_status": "NORMAL", "maturity_bucket": "3~5년", "macaulay_duration": 4.5, "modified_duration": 4.3, "duration_status": "CALCULATED", "schedule_estimated": False, "stub_period": False},
+        ],
+        "bond_snapshot": [
+            {
+                "isin_code": "KR1", "reference_date": "2026-08-07", "bond_name": "국민주택채권",
+                "issuer": "정부", "bond_type": "국채", "credit_rating": None,
+                "maturity_date": "2028-08-11", "remaining_days": 730, "coupon_rate": 3.4,
+                "close_price": 10000, "ytm": 3.5, "volume": 10, "trading_value": 100000,
+                "has_option": False, "is_fixed_rate": True, "macaulay_duration": 1.9,
+                "modified_duration": 1.8, "relative_yield_spread": 0.3,
+            },
+            {
+                "isin_code": "KR2", "reference_date": "2026-08-07", "bond_name": "회사채",
+                "issuer": "우리은행", "bond_type": "회사채", "credit_rating": "AA-",
+                "maturity_date": "2031-08-11", "remaining_days": 1826, "coupon_rate": 4.1,
+                "close_price": 9900, "ytm": 4.5, "volume": 20, "trading_value": 198000,
+                "has_option": False, "is_fixed_rate": True, "macaulay_duration": 4.5,
+                "modified_duration": 4.3, "relative_yield_spread": 1.0,
+            },
         ],
         "health_check": [{"id": 1, "status": "ok"}],
     }

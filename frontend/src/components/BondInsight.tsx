@@ -4,7 +4,8 @@ import { Activity, LineChart, MousePointerClick, Percent, ShieldAlert, Sparkles 
 import { useState } from "react";
 import type { ComponentType } from "react";
 
-import type { MockBond } from "@/data/mockBonds";
+import { formatRemainingMaturity } from "@/lib/bondSnapshot";
+import type { BondSnapshotRow } from "@/types/api";
 
 import { AiAnalysisPanel } from "./AiAnalysisPanel";
 
@@ -24,15 +25,23 @@ function formatKoreanNumber(value: number, unit: string): string {
   return `${value.toLocaleString()}${unit}`;
 }
 
-// 남색 블록 4지표 — 기존 BondInsight(백엔드/CSV 연동판)와 계산식은 동일하게 재사용,
-// 데이터 소스만 mock 데이터로 바뀜 (docs/SKILL_1034.md 0-4, Step 3에서 Screener가 mock으로
-// 바뀐 것과 같은 이유).
-function buildInsightMetrics(bond: MockBond): InsightMetric[] {
+function durationUnavailableReason(bond: BondSnapshotRow): string {
+  if (bond.has_option) return "옵션부 채권이라 계산 대상에서 제외됐어요";
+  if (bond.is_fixed_rate === false) return "변동금리 채권이라 계산 대상에서 제외됐어요";
+  if (bond.remaining_days === null) return "영구채라 계산 대상에서 제외됐어요";
+  return "계산에 필요한 데이터가 부족해요";
+}
+
+// 남색 블록 4지표 — 계산식은 mock 이전(백엔드/CSV 연동판)과 동일, 데이터 소스만
+// bond_snapshot(Supabase)으로 바뀜 (docs/SKILL_1035.md Step 4).
+function buildInsightMetrics(bond: BondSnapshotRow): InsightMetric[] {
+  const isTreasury = bond.bond_type === "국채";
+
   return [
     {
       label: "오늘 거래량 (유동성)",
-      value: formatKoreanNumber(bond.tradingValue, "원"),
-      caption: `${bond.maturityDate} 만기 · mock 데이터 기준`,
+      value: bond.trading_value !== null ? formatKoreanNumber(bond.trading_value, "원") : "데이터 없음",
+      caption: `${bond.reference_date} 기준 (Supabase)`,
       icon: Activity,
     },
     {
@@ -43,34 +52,43 @@ function buildInsightMetrics(bond: MockBond): InsightMetric[] {
     },
     {
       label: "신용 스프레드",
-      value: bond.creditSpread !== null ? `+${(bond.creditSpread * 100).toFixed(0)}bp` : "해당 없음",
-      caption:
-        bond.creditSpread !== null
-          ? "YTM − 잔존만기 보간 국고채 금리"
-          : "국채는 스스로가 기준금리라 신용 스프레드가 의미 없어요",
+      value:
+        isTreasury
+          ? "해당 없음"
+          : bond.relative_yield_spread !== null
+            ? `${bond.relative_yield_spread >= 0 ? "+" : ""}${(bond.relative_yield_spread * 100).toFixed(0)}bp`
+            : "데이터 없음",
+      caption: isTreasury
+        ? "국채는 스스로가 기준금리라 신용 스프레드가 의미 없어요"
+        : bond.relative_yield_spread !== null
+          ? "YTM − 잔존만기 보간 국고채 금리 (Supabase 계산값)"
+          : "벤치마크 금리를 찾지 못했어요",
       icon: ShieldAlert,
     },
     {
       label: "Duration (금리 민감도)",
-      value: bond.modifiedDuration.toFixed(2),
-      caption: `금리 1%p 오르면 가격 약 -${bond.modifiedDuration.toFixed(2)}% 변동`,
+      value: bond.modified_duration !== null ? bond.modified_duration.toFixed(2) : "데이터 없음",
+      caption:
+        bond.modified_duration !== null
+          ? `금리 1%p 오르면 가격 약 -${bond.modified_duration.toFixed(2)}% 변동 (Supabase 계산값)`
+          : durationUnavailableReason(bond),
       icon: LineChart,
     },
   ];
 }
 
-const DETAIL_FIELDS: { label: string; value: (bond: MockBond) => string }[] = [
-  { label: "채권명", value: (bond) => bond.bondName },
-  { label: "발행사", value: (bond) => bond.issuer },
-  { label: "유형", value: (bond) => bond.bondType },
-  { label: "신용등급", value: (bond) => bond.creditRating },
-  { label: "잔존만기", value: (bond) => `${bond.remainingMaturityYears.toFixed(2)}년` },
+const DETAIL_FIELDS: { label: string; value: (bond: BondSnapshotRow) => string }[] = [
+  { label: "채권명", value: (bond) => bond.bond_name },
+  { label: "발행사", value: (bond) => bond.issuer ?? "-" },
+  { label: "유형", value: (bond) => bond.bond_type ?? "-" },
+  { label: "신용등급", value: (bond) => bond.credit_rating ?? "-" },
+  { label: "잔존만기", value: formatRemainingMaturity },
   { label: "YTM(수익률)", value: (bond) => `${bond.ytm.toFixed(2)}%` },
-  { label: "현재가격", value: (bond) => `${bond.price.toLocaleString()}원` },
+  { label: "현재가격", value: (bond) => `${bond.close_price.toLocaleString()}원` },
 ];
 
 interface BondInsightProps {
-  selectedFields: MockBond | null;
+  selectedFields: BondSnapshotRow | null;
 }
 
 export function BondInsight({ selectedFields: bond }: BondInsightProps) {
@@ -126,17 +144,10 @@ export function BondInsight({ selectedFields: bond }: BondInsightProps) {
       ) : (
         <>
           <div className="mb-3">
-            <p className="text-lg font-bold text-navy-900">{bond.bondName}</p>
+            <p className="text-lg font-bold text-navy-900">{bond.bond_name}</p>
             <p className="text-xs text-ink-600">
-              {bond.bondType} · {bond.creditRating}
+              {bond.bond_type ?? "-"} · {bond.credit_rating ?? "무등급"}
             </p>
-            <div className="mt-1 flex flex-wrap gap-1">
-              {bond.tags.map((tag) => (
-                <span key={tag} className="rounded-full bg-cream-100 px-1.5 py-0.5 text-[10px] font-medium text-ink-600">
-                  {tag}
-                </span>
-              ))}
-            </div>
           </div>
 
           <div className="mb-4 grid grid-cols-2 gap-3 rounded-xl bg-navy-900 p-4 text-cream-50">
@@ -168,7 +179,7 @@ export function BondInsight({ selectedFields: bond }: BondInsightProps) {
               <p className="text-xs font-semibold text-ink-600">선택 채권 가격 추이</p>
               <span className="rounded-full bg-gold-500/15 px-2 py-0.5 text-[10px] font-medium text-gold-700">Price</span>
             </div>
-            <p className="text-[11px] text-ink-400">현재는 mock 단일 기준일 데이터라 시계열 연결 TODO</p>
+            <p className="text-[11px] text-ink-400">현재는 Supabase 단일 기준일(2026-08-07) 데이터라 시계열 연결 TODO</p>
           </div>
         </>
       )}
