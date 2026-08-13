@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Sparkles, X } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { ApiError, explainBond } from "@/lib/api";
@@ -55,27 +55,26 @@ export function AiAnalysisPanel({ bond, onClose }: AiAnalysisPanelProps) {
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-navy-950/40" onClick={onClose} aria-hidden="true" />
-      <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-gold-500/30 bg-white shadow-xl sm:w-1/3 sm:min-w-[360px]">
-        <div className="flex items-center justify-between border-b border-gold-500/20 bg-navy-900 px-5 py-4 text-cream-50">
-          <div className="flex items-center gap-2">
-            <Sparkles size={18} className="text-gold-400" />
-            <div>
-              <p className="text-sm font-bold">AI Analysis</p>
-              <p className="text-xs text-cream-100/70">{bond.bond_name}</p>
-            </div>
+      <div className="fixed inset-0 z-40 bg-navy-950/40 backdrop-blur-[2px]" onClick={onClose} aria-hidden="true" />
+      <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l-[3px] border-gold-500 bg-cream-50 p-7 shadow-2xl sm:w-1/3 sm:min-w-[380px]">
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <p className="flex items-center gap-1.5 text-xs font-black tracking-[0.1em] text-gold-500">
+              <Sparkles size={13} />
+              AI ANALYSIS
+            </p>
+            <h2 className="mt-1.5 text-xl font-bold text-navy-950">{bond.bond_name}</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-1 text-cream-100/80 hover:bg-cream-50/10 hover:text-cream-50"
-            aria-label="닫기"
+            className="shrink-0 rounded border border-gold-500/30 px-2.5 py-1.5 text-xs font-extrabold text-ink-900 hover:bg-white"
           >
-            <X size={18} />
+            닫기
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 text-sm text-ink-700">
+        <div className="flex-1 overflow-y-auto text-sm text-ink-700">
           {state.status === "loading" && (
             <div className="flex items-center gap-2 text-ink-500">
               <Loader2 size={16} className="animate-spin" /> AI 분석을 불러오는 중이에요
@@ -83,8 +82,8 @@ export function AiAnalysisPanel({ bond, onClose }: AiAnalysisPanelProps) {
           )}
           {state.status === "not-found" && (
             <p className="text-ink-500">
-              이 채권은 아직 AI 분석 데이터가 없어요. Bond Screener가 지금은 mock 데이터라 실제 Supabase 채권과
-              매칭되지 않을 수 있어요 (DB 연동 후 해결될 예정).
+              이 채권은 아직 AI 분석 데이터가 없어요. bond_snapshot의 극소수 채권은 Supabase bonds 테이블과
+              매칭되지 않을 수 있어요.
             </p>
           )}
           {state.status === "error" && <p className="text-down">AI 분석을 불러오지 못했어요: {state.message}</p>}

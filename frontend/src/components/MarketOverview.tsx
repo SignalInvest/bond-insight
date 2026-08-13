@@ -1,8 +1,5 @@
 "use client";
 
-import { ArrowUpDown, Gauge, Landmark, Percent, ShoppingBasket } from "lucide-react";
-import type { ComponentType } from "react";
-
 import { useMarketSnapshot } from "@/lib/useMarketSnapshot";
 import type { MarketStatus } from "@/lib/marketStatus";
 import type { MarketRatesRow } from "@/types/api";
@@ -11,17 +8,16 @@ interface MarketKpi {
   label: string;
   value: string;
   caption: string;
-  icon: ComponentType<{ size?: number }>;
 }
 
 // 2026-08-12 src/loading/upload_cpi.py로 market_rates.cpi_yoy 채워넣기 전까지 쓰던 값.
 // 백엔드가 아예 안 켜져 있을 때(FALLBACK_KPIS)만 이 값을 씀.
 const FALLBACK_KPIS: MarketKpi[] = [
-  { label: "기준금리", value: "3.50%", caption: "정책금리 기준", icon: Percent },
-  { label: "국고채 3Y", value: "3.25%", caption: "Policy Spread +0.75%p", icon: Landmark },
-  { label: "국고채 10Y", value: "3.38%", caption: "시장금리 기준", icon: Landmark },
-  { label: "장단기 금리차", value: "+13bp", caption: "10Y - 3Y", icon: ArrowUpDown },
-  { label: "CPI", value: "2.8%", caption: "최근 월 기준", icon: ShoppingBasket },
+  { label: "기준금리", value: "3.50%", caption: "정책금리 기준" },
+  { label: "국고채 3Y", value: "3.25%", caption: "Policy Spread +0.75%p" },
+  { label: "국고채 10Y", value: "3.38%", caption: "시장금리 기준" },
+  { label: "장단기 금리차", value: "+13bp", caption: "10Y - 3Y" },
+  { label: "CPI", value: "2.8%", caption: "최근 월 기준" },
 ];
 
 const FALLBACK_STATUS: MarketStatus = {
@@ -32,25 +28,22 @@ const FALLBACK_STATUS: MarketStatus = {
 
 function buildKpis(latest: MarketRatesRow): MarketKpi[] {
   return [
-    { label: "기준금리", value: `${latest.base_rate.toFixed(2)}%`, caption: "정책금리 기준", icon: Percent },
+    { label: "기준금리", value: `${latest.base_rate.toFixed(2)}%`, caption: "정책금리 기준" },
     {
       label: "국고채 3Y",
       value: `${latest.treasury_3y.toFixed(2)}%`,
       caption: `Policy Spread ${latest.policy_spread >= 0 ? "+" : ""}${latest.policy_spread.toFixed(2)}%p`,
-      icon: Landmark,
     },
-    { label: "국고채 10Y", value: `${latest.treasury_10y.toFixed(2)}%`, caption: "시장금리 기준", icon: Landmark },
+    { label: "국고채 10Y", value: `${latest.treasury_10y.toFixed(2)}%`, caption: "시장금리 기준" },
     {
       label: "장단기 금리차",
       value: `${latest.yield_spread >= 0 ? "+" : ""}${latest.yield_spread.toFixed(2)}%p`,
       caption: "10Y - 3Y",
-      icon: ArrowUpDown,
     },
     {
       label: "CPI",
       value: latest.cpi_yoy !== null ? `${latest.cpi_yoy.toFixed(2)}%` : "데이터 없음",
       caption: "최근 월 기준",
-      icon: ShoppingBasket,
     },
   ];
 }
@@ -68,14 +61,16 @@ export function MarketOverview({ referenceDate }: MarketOverviewProps) {
   return (
     <section aria-labelledby="bond-market-title">
       <div className="mb-4 flex items-end justify-between gap-4">
-        <div>
-          <h2 id="bond-market-title" className="flex items-baseline gap-2">
-            <span className="text-sm font-bold text-gold-600">01</span>
-            <span className="text-lg font-bold text-navy-900">BOND MARKET</span>
-          </h2>
-          <p className="text-xs text-ink-600">지금 채권시장은 어떤 상황일까요?</p>
+        <div className="flex items-start gap-3">
+          <span className="font-serif text-2xl leading-none text-gold-500">01</span>
+          <div>
+            <h2 id="bond-market-title" className="text-2xl font-bold text-ink-900">
+              BOND MARKET
+            </h2>
+            <p className="mt-1 text-sm text-ink-600">지금 채권시장은 어떤 상황일까요?</p>
+          </div>
         </div>
-        <span className="text-xs text-ink-400">
+        <span className="text-[11px] text-ink-400">
           {snapshot.status === "loaded"
             ? `${snapshot.latest.reference_date} 기준 (Supabase)`
             : snapshot.status === "empty"
@@ -87,32 +82,25 @@ export function MarketOverview({ referenceDate }: MarketOverviewProps) {
       </div>
 
       {snapshot.status === "empty" ? (
-        <div className="rounded-2xl border border-gold-500/30 bg-white p-6 text-center text-sm text-ink-600 shadow-sm shadow-navy-900/5">
-          {referenceDate} 기준 시장 데이터가 없어요. 상단에서 다른 기준일을 선택해 보세요.
+        <div className="grid min-h-[220px] place-items-center rounded-lg border border-gold-500/30 bg-white/60 p-10 text-center shadow-sm">
+          <p className="text-sm text-ink-600">
+            {referenceDate} 기준 시장 데이터가 없어요. 상단에서 다른 기준일을 선택해 보세요.
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          <div className="rounded-2xl border border-gold-500/30 bg-white p-5 shadow-sm shadow-navy-900/5">
-            <span className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-cream-100 text-gold-600">
-              <Gauge size={18} />
-            </span>
-            <p className="text-xs text-ink-600">시장상황</p>
-            <p className="mt-1 text-lg font-bold text-navy-900">{marketStatus.label}</p>
-            <p className="mt-1 text-xs text-ink-600">{marketStatus.description}</p>
-            <p className="mt-1 text-[11px] text-ink-400">{marketStatus.condition}</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[1.4fr_repeat(5,1fr)]">
+          <div className="min-h-[125px] rounded-lg border border-gold-500/30 bg-white/60 p-5 shadow-sm">
+            <p className="mb-2.5 text-[13px] font-extrabold text-ink-900">시장상황</p>
+            <p className="text-lg font-black leading-snug text-navy-950">{marketStatus.label}</p>
+            <p className="mt-3 text-xs leading-relaxed text-ink-600">{marketStatus.description}</p>
+            <p className="mt-2 text-[11px] text-ink-400">{marketStatus.condition}</p>
           </div>
 
           {kpis.map((kpi) => (
-            <div
-              key={kpi.label}
-              className="rounded-2xl border border-gold-500/30 bg-white p-5 shadow-sm shadow-navy-900/5"
-            >
-              <span className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-cream-100 text-gold-600">
-                <kpi.icon size={18} />
-              </span>
-              <p className="text-xs text-ink-600">{kpi.label}</p>
-              <p className="mt-1 text-2xl font-bold text-navy-900">{kpi.value}</p>
-              <p className="mt-1 text-xs text-ink-400">{kpi.caption}</p>
+            <div key={kpi.label} className="min-h-[125px] rounded-lg border border-gold-500/30 bg-white/60 p-5 shadow-sm">
+              <p className="mb-2.5 text-[13px] font-extrabold text-ink-900">{kpi.label}</p>
+              <p className="font-serif text-3xl leading-tight text-navy-950">{kpi.value}</p>
+              <p className="mt-3 text-xs leading-relaxed text-ink-600">{kpi.caption}</p>
             </div>
           ))}
         </div>

@@ -92,17 +92,19 @@ export function BondScreener({ referenceDate, selectedIsin, onSelectBond }: Bond
   return (
     <section
       aria-labelledby="bond-screener-title"
-      className="rounded-2xl border border-gold-500/30 bg-white p-5 shadow-sm shadow-navy-900/5"
+      className="rounded-lg border border-gold-500/30 bg-white/60 p-5 shadow-sm"
     >
       <div className="mb-4 flex items-end justify-between gap-4">
-        <div>
-          <h2 id="bond-screener-title" className="flex items-baseline gap-2">
-            <span className="text-sm font-bold text-gold-600">02</span>
-            <span className="text-lg font-bold text-navy-900">BOND SCREENER</span>
-          </h2>
-          <p className="text-xs text-ink-600">조건을 선택하거나 검색하여 관심 채권을 찾아보세요.</p>
+        <div className="flex items-start gap-3">
+          <span className="font-serif text-2xl leading-none text-gold-500">02</span>
+          <div>
+            <h2 id="bond-screener-title" className="text-xl font-bold text-ink-900">
+              BOND SCREENER
+            </h2>
+            <p className="mt-1 text-sm text-ink-600">조건을 선택하거나 검색하여 관심 채권을 찾아보세요.</p>
+          </div>
         </div>
-        <span className="text-xs text-ink-400">
+        <span className="text-[11px] text-ink-400">
           {snapshot.status === "loaded"
             ? bonds.length > 0
               ? `${referenceDate} 기준 ${bonds.length}건 (Supabase)`
@@ -123,13 +125,13 @@ export function BondScreener({ referenceDate, selectedIsin, onSelectBond }: Bond
         <FilterButton label="장기" active={longTerm} onClick={() => setLongTerm((v) => !v)} />
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <label className="flex flex-col gap-1 text-xs text-ink-600">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_1.8fr]">
+        <label className="grid gap-1.5 text-xs font-extrabold text-ink-900">
           신용등급
           <select
             value={ratingFilter}
             onChange={(event) => setRatingFilter(event.target.value)}
-            className="rounded-lg border border-gold-500/30 bg-white px-2 py-1.5 text-sm text-navy-900"
+            className="h-11 rounded border border-gold-500/30 bg-white/70 px-3 text-sm font-normal text-ink-900"
           >
             <option value="전체">전체</option>
             {ratingOptions.map((rating) => (
@@ -140,12 +142,12 @@ export function BondScreener({ referenceDate, selectedIsin, onSelectBond }: Bond
           </select>
         </label>
 
-        <label className="flex flex-col gap-1 text-xs text-ink-600">
+        <label className="grid gap-1.5 text-xs font-extrabold text-ink-900">
           잔존만기
           <select
             value={maturityBucket}
             onChange={(event) => setMaturityBucket(event.target.value)}
-            className="rounded-lg border border-gold-500/30 bg-white px-2 py-1.5 text-sm text-navy-900"
+            className="h-11 rounded border border-gold-500/30 bg-white/70 px-3 text-sm font-normal text-ink-900"
           >
             <option value="전체">전체</option>
             {MATURITY_BUCKETS.map((bucket) => (
@@ -156,37 +158,37 @@ export function BondScreener({ referenceDate, selectedIsin, onSelectBond }: Bond
           </select>
         </label>
 
-        <label className="flex flex-col gap-1 text-xs text-ink-600">
+        <label className="grid gap-1.5 text-xs font-extrabold text-ink-900">
           채권명 검색
-          <div className="flex items-center gap-1.5 rounded-lg border border-gold-500/30 bg-white px-2 py-1.5">
+          <div className="flex h-11 items-center gap-1.5 rounded border border-gold-500/30 bg-white/70 px-3">
             <Search size={14} className="text-ink-400" />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="채권명 또는 종목코드 입력"
-              className="w-full text-sm text-navy-900 outline-none placeholder:text-ink-400"
+              className="w-full text-sm font-normal text-ink-900 outline-none placeholder:text-ink-400"
             />
           </div>
         </label>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-gold-500/20">
+      <div className="max-h-[520px] overflow-x-auto overflow-y-auto rounded-md border border-gold-500/20">
         <table className="w-full min-w-[640px] text-left text-sm">
-          <thead className="bg-navy-900 text-cream-50">
+          <thead className="sticky top-0 z-10 bg-navy-950 text-cream-50">
             <tr>
-              <th className="px-3 py-2 font-semibold">채권명</th>
-              <th className="px-3 py-2 font-semibold">발행사</th>
-              <th className="px-3 py-2 font-semibold">유형</th>
-              <th className="px-3 py-2 font-semibold">신용등급</th>
-              <th className="px-3 py-2 font-semibold">잔존만기</th>
-              <th className="px-3 py-2 font-semibold">YTM(수익률)</th>
-              <th className="px-3 py-2 font-semibold">현재가격</th>
+              <th className="px-4 py-3.5 text-xs font-extrabold">채권명</th>
+              <th className="px-4 py-3.5 text-xs font-extrabold">발행사</th>
+              <th className="px-4 py-3.5 text-xs font-extrabold">유형</th>
+              <th className="px-4 py-3.5 text-xs font-extrabold">신용등급</th>
+              <th className="px-4 py-3.5 text-xs font-extrabold">잔존만기</th>
+              <th className="px-4 py-3.5 text-xs font-extrabold">YTM(수익률)</th>
+              <th className="px-4 py-3.5 text-xs font-extrabold">현재가격</th>
             </tr>
           </thead>
           <tbody>
             {snapshot.status === "loading" ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-ink-400">
+                <td colSpan={7} className="px-4 py-6 text-center text-ink-400">
                   <span className="inline-flex items-center gap-2">
                     <Loader2 size={14} className="animate-spin" /> 불러오는 중...
                   </span>
@@ -194,13 +196,13 @@ export function BondScreener({ referenceDate, selectedIsin, onSelectBond }: Bond
               </tr>
             ) : snapshot.status === "error" ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-down">
+                <td colSpan={7} className="px-4 py-6 text-center text-down">
                   채권 데이터를 불러오지 못했어요. 백엔드가 켜져 있는지 확인해 주세요.
                 </td>
               </tr>
             ) : filteredBonds.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-ink-400">
+                <td colSpan={7} className="px-4 py-6 text-center text-ink-400">
                   조건에 맞는 채권이 없어요.
                 </td>
               </tr>
@@ -211,17 +213,17 @@ export function BondScreener({ referenceDate, selectedIsin, onSelectBond }: Bond
                   <tr
                     key={bond.isin_code}
                     onClick={() => onSelectBond?.(bond)}
-                    className={`cursor-pointer border-t border-gold-500/10 transition-colors hover:bg-cream-50 ${
-                      isSelected ? "bg-cream-100" : ""
+                    className={`cursor-pointer border-b border-gold-500/15 transition-colors hover:bg-[#f7f0e3] ${
+                      isSelected ? "bg-cream-100 shadow-[inset_4px_0_0_0_#c8a24a]" : ""
                     }`}
                   >
-                    <td className="px-3 py-2 font-medium text-navy-900">{bond.bond_name}</td>
-                    <td className="px-3 py-2 text-ink-700">{bond.issuer ?? "-"}</td>
-                    <td className="px-3 py-2 text-ink-700">{bond.bond_type ?? "-"}</td>
-                    <td className="px-3 py-2 text-ink-700">{bond.credit_rating ?? "-"}</td>
-                    <td className="px-3 py-2 text-ink-700">{formatRemainingMaturity(bond)}</td>
-                    <td className="px-3 py-2 font-semibold text-up">{bond.ytm.toFixed(2)}%</td>
-                    <td className="px-3 py-2 text-ink-700">{bond.close_price.toLocaleString()}원</td>
+                    <td className="px-4 py-3 font-medium text-ink-900">{bond.bond_name}</td>
+                    <td className="px-4 py-3 text-ink-700">{bond.issuer ?? "-"}</td>
+                    <td className="px-4 py-3 text-ink-700">{bond.bond_type ?? "-"}</td>
+                    <td className="px-4 py-3 text-ink-700">{bond.credit_rating ?? "-"}</td>
+                    <td className="px-4 py-3 text-ink-700">{formatRemainingMaturity(bond)}</td>
+                    <td className="px-4 py-3 font-semibold text-up">{bond.ytm.toFixed(2)}%</td>
+                    <td className="px-4 py-3 text-ink-700">{bond.close_price.toLocaleString()}원</td>
                   </tr>
                 );
               })
@@ -238,10 +240,10 @@ function FilterButton({ label, active, onClick }: { label: string; active: boole
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+      className={`rounded-full border px-3.5 py-2 text-[13px] font-bold transition-colors ${
         active
           ? "border-navy-900 bg-navy-900 text-cream-50"
-          : "border-gold-500/30 bg-white text-ink-700 hover:border-gold-500"
+          : "border-gold-500/30 bg-transparent text-ink-900 hover:border-gold-500"
       }`}
     >
       {label}

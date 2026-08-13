@@ -1,8 +1,7 @@
 "use client";
 
-import { Activity, LineChart, MousePointerClick, Percent, ShieldAlert, Sparkles } from "lucide-react";
+import { MousePointerClick, Sparkles } from "lucide-react";
 import { useState } from "react";
-import type { ComponentType } from "react";
 
 import { formatRemainingMaturity } from "@/lib/bondSnapshot";
 import type { BondSnapshotRow } from "@/types/api";
@@ -13,7 +12,6 @@ interface InsightMetric {
   label: string;
   value: string;
   caption: string;
-  icon: ComponentType<{ size?: number }>;
 }
 
 const WITHHOLDING_TAX_RATE = 0.154;
@@ -42,13 +40,11 @@ function buildInsightMetrics(bond: BondSnapshotRow): InsightMetric[] {
       label: "오늘 거래량 (유동성)",
       value: bond.trading_value !== null ? formatKoreanNumber(bond.trading_value, "원") : "데이터 없음",
       caption: `${bond.reference_date} 기준 (Supabase)`,
-      icon: Activity,
     },
     {
       label: "실질수익률 (세후)",
       value: `${(bond.ytm * (1 - WITHHOLDING_TAX_RATE)).toFixed(2)}%`,
       caption: `세전 YTM ${bond.ytm.toFixed(2)}% × (1 − 이자소득세 15.4%)`,
-      icon: Percent,
     },
     {
       label: "신용 스프레드",
@@ -63,7 +59,6 @@ function buildInsightMetrics(bond: BondSnapshotRow): InsightMetric[] {
         : bond.relative_yield_spread !== null
           ? "YTM − 잔존만기 보간 국고채 금리 (Supabase 계산값)"
           : "벤치마크 금리를 찾지 못했어요",
-      icon: ShieldAlert,
     },
     {
       label: "Duration (금리 민감도)",
@@ -72,7 +67,6 @@ function buildInsightMetrics(bond: BondSnapshotRow): InsightMetric[] {
         bond.modified_duration !== null
           ? `금리 1%p 오르면 가격 약 -${bond.modified_duration.toFixed(2)}% 변동 (Supabase 계산값)`
           : durationUnavailableReason(bond),
-      icon: LineChart,
     },
   ];
 }
@@ -97,29 +91,31 @@ export function BondInsight({ selectedFields: bond }: BondInsightProps) {
   return (
     <section
       aria-labelledby="bond-overview-title"
-      className="rounded-2xl border border-gold-500/30 bg-white p-5 shadow-sm shadow-navy-900/5"
+      className="rounded-lg border border-gold-500/30 bg-white/60 p-5 shadow-sm"
     >
-      <div className="mb-4 flex items-start justify-between gap-2">
-        <div>
-          <h2 id="bond-overview-title" className="flex items-baseline gap-2">
-            <span className="text-sm font-bold text-gold-600">03</span>
-            <span className="text-lg font-bold text-navy-900">BOND OVERVIEW</span>
-          </h2>
-          <p className="flex items-center gap-1 text-xs text-ink-600">
-            {bond ? (
-              <>선택한 채권의 상세 정보예요.</>
-            ) : (
-              <>
-                <MousePointerClick size={14} /> 좌측에서 채권을 선택하면 상세 정보가 표시됩니다.
-              </>
-            )}
-          </p>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="font-serif text-2xl leading-none text-gold-500">03</span>
+          <div>
+            <h2 id="bond-overview-title" className="text-xl font-bold text-ink-900">
+              BOND OVERVIEW
+            </h2>
+            <p className="mt-1 flex items-center gap-1 text-sm text-ink-600">
+              {bond ? (
+                <>선택한 채권의 상세 정보예요.</>
+              ) : (
+                <>
+                  <MousePointerClick size={14} /> 좌측에서 채권을 선택하면 상세 정보가 표시됩니다.
+                </>
+              )}
+            </p>
+          </div>
         </div>
         {bond && (
           <button
             type="button"
             onClick={() => setIsAiOpen(true)}
-            className="flex shrink-0 items-center gap-1 rounded-full bg-navy-900 px-3 py-1.5 text-xs font-semibold text-cream-50 hover:bg-navy-800"
+            className="flex shrink-0 items-center gap-1.5 rounded border border-gold-500 bg-navy-950 px-3.5 py-2 text-xs font-black tracking-wide text-cream-50"
           >
             <Sparkles size={13} className="text-gold-400" />
             AI Analysis
@@ -132,55 +128,40 @@ export function BondInsight({ selectedFields: bond }: BondInsightProps) {
       {!bond ? (
         <div className="flex flex-col gap-3">
           {["오늘 거래량 (유동성)", "실질수익률 (세후)", "신용 스프레드", "Duration (금리 민감도)"].map((label) => (
-            <div key={label} className="flex items-start gap-3 rounded-xl bg-cream-50 p-3">
-              <div>
-                <p className="text-xs text-ink-600">{label}</p>
-                <p className="text-lg font-bold text-navy-900">-</p>
-                <p className="text-xs text-ink-400">왼쪽 표에서 채권을 선택하세요</p>
-              </div>
+            <div key={label} className="rounded bg-cream-50 p-3">
+              <p className="text-xs text-ink-600">{label}</p>
+              <p className="text-lg font-bold text-navy-900">-</p>
+              <p className="text-xs text-ink-400">왼쪽 표에서 채권을 선택하세요</p>
             </div>
           ))}
         </div>
       ) : (
         <>
-          <div className="mb-3">
-            <p className="text-lg font-bold text-navy-900">{bond.bond_name}</p>
-            <p className="text-xs text-ink-600">
+          <div className="mb-3.5">
+            <p className="text-xl font-bold text-ink-900">{bond.bond_name}</p>
+            <p className="mt-1 text-sm text-ink-600">
               {bond.bond_type ?? "-"} · {bond.credit_rating ?? "무등급"}
             </p>
           </div>
 
-          <div className="mb-4 grid grid-cols-2 gap-3 rounded-xl bg-navy-900 p-4 text-cream-50">
-            {buildInsightMetrics(bond).map((metric) => (
-              <div key={metric.label} className="flex items-start gap-2">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cream-50/10 text-gold-400">
-                  <metric.icon size={15} />
-                </span>
-                <div>
-                  <p className="text-[11px] text-cream-100/70">{metric.label}</p>
-                  <p className="text-base font-bold text-cream-50">{metric.value}</p>
-                  <p className="text-[10px] leading-tight text-cream-100/60">{metric.caption}</p>
-                </div>
+          <div className="mb-4 grid grid-cols-2 overflow-hidden rounded-lg bg-navy-950 text-cream-50">
+            {buildInsightMetrics(bond).map((metric, index) => (
+              <div key={metric.label} className={`p-4 ${index !== 0 ? "border-l border-gold-500/40" : ""}`}>
+                <p className="mb-2 text-xs font-black text-gold-400">{metric.label}</p>
+                <p className="text-xl font-bold text-cream-50">{metric.value}</p>
+                <p className="mt-1 text-[11px] leading-tight text-cream-100/60">{metric.caption}</p>
               </div>
             ))}
           </div>
 
-          <div className="mb-4 grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl bg-cream-50 p-3 text-xs">
+          <dl className="grid grid-cols-2 gap-x-5 gap-y-3.5">
             {DETAIL_FIELDS.map((field) => (
               <div key={field.label}>
-                <p className="text-ink-400">{field.label}</p>
-                <p className="font-medium text-navy-800">{field.value(bond)}</p>
+                <dt className="text-xs font-extrabold text-ink-400">{field.label}</dt>
+                <dd className="mt-0.5 font-bold text-ink-900">{field.value(bond)}</dd>
               </div>
             ))}
-          </div>
-
-          <div className="rounded-xl border border-dashed border-gold-500/30 p-4 text-center">
-            <div className="mb-1 flex items-center justify-center gap-2">
-              <p className="text-xs font-semibold text-ink-600">선택 채권 가격 추이</p>
-              <span className="rounded-full bg-gold-500/15 px-2 py-0.5 text-[10px] font-medium text-gold-700">Price</span>
-            </div>
-            <p className="text-[11px] text-ink-400">현재는 Supabase 단일 기준일(2026-08-07) 데이터라 시계열 연결 TODO</p>
-          </div>
+          </dl>
         </>
       )}
     </section>
