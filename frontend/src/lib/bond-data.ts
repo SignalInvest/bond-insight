@@ -201,7 +201,7 @@ export async function getBondDashboardData(): Promise<BondDashboardData> {
   const records = parseCsv(text);
   const marketRateRecords = parseCsv(marketRatesText);
 
-  const bonds = records
+  const parsedBonds = records
     .map((row, index): BondRow | null => {
       const ytm = toNumber(row.close_yield);
       const price = toNumber(row.close_price);
@@ -262,8 +262,11 @@ export async function getBondDashboardData(): Promise<BondDashboardData> {
 
       return { ...baseBond, tags: getBondTags(baseBond) };
     })
-    .filter((bond): bond is BondRow => bond !== null)
-    .sort((a, b) => b.tradingValue - a.tradingValue);
+    .filter((bond): bond is BondRow => bond !== null);
+
+  const bonds = Array.from(
+    new Map(parsedBonds.map((bond) => [`${bond.date}:${bond.id}`, bond])).values(),
+  ).sort((a, b) => b.tradingValue - a.tradingValue);
 
   const availableDates = marketRateRecords.map((row) => row.date).filter(Boolean).sort();
   const cpi = bonds[0]?.cpi ?? null;
