@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { ApiError, explainBond } from "@/lib/api";
 import type { BondDashboardData, BondRow, MarketSnapshot } from "@/types/bond";
 
 interface Props {
@@ -9,8 +10,18 @@ interface Props {
 }
 
 type QuickFilter = "전체" | "국채" | "회사채" | "안정성 중심" | "수익률 중심" | "단기채";
+type AiState =
+  | { status: "idle" }
+  | { status: "loading"; isin: string }
+  | { status: "loaded"; isin: string; explanation: string; model: string }
+  | { status: "not-found"; isin: string }
+  | { status: "error"; isin: string; message: string };
 
 const quickFilters: QuickFilter[] = ["전체", "국채", "회사채", "안정성 중심", "수익률 중심", "단기채"];
+
+function formatTodayText(date: Date): string {
+  return `오늘은 ${date.getMonth() + 1}월 ${date.getDate()}일입니다.`;
+}
 
 function formatPercent(value: number | null, digits = 2): string {
   return value === null ? "데이터 미확보" : `${value.toFixed(digits)}%`;
@@ -45,6 +56,74 @@ function deltaText(value: number, unit: string): string {
 
 function toInputDate(value: string): string {
   return value.slice(0, 10);
+}
+
+function tagToneClass(tag: string): string {
+  if (tag === "안정성 중심") return "tag-stable";
+  if (tag === "수익률 중심" || tag === "수익률 높음") return "tag-yield";
+  if (tag === "단기" || tag === "단기채") return "tag-short";
+  if (tag === "거래 활발") return "tag-liquid";
+  if (tag === "국채") return "tag-treasury";
+  return "tag-neutral";
+}
+
+function directionClass(value: number): string {
+  if (value > 0.005) return "direction-up";
+  if (value < -0.005) return "direction-down";
+  return "direction-neutral";
+}
+
+function getYtmBenchmark(bond: BondRow, market: MarketSnapshot): number {
+  return bond.remainingYears <= 5 ? market.treasury3y : market.treasury10y;
+}
+
+function ytmRelativeClass(bond: BondRow, market: MarketSnapshot): string {
+  return directionClass(bond.ytm - getYtmBenchmark(bond, market));
+}
+
+function splitMarketSummaryLine(text: string) {
+  const match = text.match(/[+-]?\d+\.\d+%p?/);
+  if (!match) return { metric: null, sentence: text };
+
+  const sentence = text
+    .replace(match[0], "")
+    .replace(/\s+/g, " ")
+    .replace("금리차가 로", "금리차가")
+    .trim();
+
+  return { metric: match[0], sentence };
+}
+
+function getInitialTodayText(): string {
+  return typeof window === "undefined" ? "" : formatTodayText(new Date());
+}
+
+function renderAiHeadline(text: string) {
+  const parts = text.split(/(만기수익률은\s*\d+\.\d+%|국고채 3Y 대비\s*[+-]?\d+\.\d+%p)/g).filter(Boolean);
+  return parts.map((part) =>
+    /만기수익률은|국고채 3Y 대비/.test(part) ? <strong key={part}>{part}</strong> : <span key={part}>{part}</span>,
+  );
+}
+
+function buildInvestorJudgmentLines(bond: BondRow, market: MarketSnapshot): string[] {
+  const benchmark = getYtmBenchmark(bond, market);
+  const spread = bond.ytm - benchmark;
+  const priority = bond.investmentPriority ?? "판정 보류";
+  const direction = spread > 0.005 ? "기준 국채보다 높은 수익률" : spread < -0.005 ? "기준 국채보다 낮은 수익률" : "기준 국채와 비슷한 수익률";
+  return [
+    `${priority} 관점에서 ${direction}을 보이는 채권입니다.`,
+    "잔존만기와 금리 민감도를 함께 확인하세요.",
+  ];
+}
+
+function buildPriceChartNote(bond: BondRow): string {
+  return `현재가는 ${formatPrice(bond.currentPrice)}이며 거래량은 ${formatMillion(bond.volume)}백만 단위입니다.`;
+}
+
+function buildRateChartNote(bond: BondRow, market: MarketSnapshot): string {
+  const benchmark = getYtmBenchmark(bond, market);
+  const spread = bond.ytm - benchmark;
+  return `선택 채권 YTM은 기준 국채 대비 ${deltaText(spread, "%p")} 차이를 보입니다.`;
 }
 
 // ① 세후 예상수익률. AI 진단 데이터 계약과 동일하게, status가 CALCULATED가 아니면
@@ -148,6 +227,7 @@ function BondMark() {
 
 export default function BondBridgeDashboard({ data }: Props) {
   const [selectedDate, setSelectedDate] = useState(data.availableDates.at(-1) ?? "");
+  const [todayText, setTodayText] = useState(getInitialTodayText);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("전체");
   const [kindFilter, setKindFilter] = useState("전체");
@@ -155,15 +235,17 @@ export default function BondBridgeDashboard({ data }: Props) {
   const [maturityFilter, setMaturityFilter] = useState("전체");
   const [query, setQuery] = useState("");
   const [isAiOpen, setIsAiOpen] = useState(false);
+  const [aiState, setAiState] = useState<AiState>({ status: "idle" });
   const [hoveredTrend, setHoveredTrend] = useState<number | null>(null);
   const [hoveredComparison, setHoveredComparison] = useState<number | null>(null);
 
   // Bond Screener/Overview는 현재 확보된 채권 스냅샷을 유지하고,
-  // 상단 기준일은 Bond Market 데이터만 변경한다.
+  // 상단 조회일은 Bond Market 데이터만 변경한다.
   const bondsForDate = data.bonds;
   const market = data.markets.find((item) => item.date === selectedDate);
   const hasDataForDate = bondsForDate.length > 0 && market !== undefined;
   const selectedBond = bondsForDate.find((bond) => bond.id === selectedId) ?? bondsForDate[0];
+  const marketSummary = market ? splitMarketSummaryLine(market.summaryLines[0]) : null;
 
   const filteredBonds = useMemo(() => {
     return bondsForDate.filter((bond) => {
@@ -195,30 +277,57 @@ export default function BondBridgeDashboard({ data }: Props) {
   const comparison = selectedBond && market ? buildComparisonPoints(selectedBond, market) : [];
   const comparisonLine = comparison.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setTodayText(formatTodayText(new Date())), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  function openAiAnalysis(bond: BondRow) {
+    setIsAiOpen(true);
+    setAiState({ status: "loading", isin: bond.id });
+    explainBond(bond.id)
+      .then((response) => {
+        setAiState({ status: "loaded", isin: bond.id, explanation: response.explanation, model: response.model });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof ApiError && error.code === "NOT_FOUND") {
+          setAiState({ status: "not-found", isin: bond.id });
+          return;
+        }
+        setAiState({
+          status: "error",
+          isin: bond.id,
+          message: error instanceof Error ? error.message : "알 수 없는 오류",
+        });
+      });
+  }
+
   return (
     <>
       <header className="bridge-header">
-        <div className="brand-block">
-          <BondMark />
-          <div>
-            <p className="brand-title">BOND BRIDGE</p>
-            <p className="brand-subtitle">채권 투자 첫걸음 대시보드</p>
+        <div className="header-inner">
+          <div className="brand-block">
+            <BondMark />
+            <div>
+              <p className="brand-title">BOND BRIDGE</p>
+              <p className="brand-subtitle">채권 투자 첫걸음 대시보드</p>
+            </div>
           </div>
-        </div>
-        <div className="header-report">
-          <label className="date-picker">
-            <span><MiniCalendarIcon /> 기준일</span>
-            <input
-              type="date"
-              value={toInputDate(selectedDate)}
-              onChange={(event) => {
-                setSelectedDate(event.target.value);
-                setSelectedId(undefined);
-                setIsAiOpen(false);
-              }}
-            />
-            <strong>{formatDate(selectedDate)} 기준</strong>
-          </label>
+          <div className="header-report">
+            {todayText && <p className="today-note">{todayText}</p>}
+            <label className="date-picker">
+              <span><MiniCalendarIcon /> 조회일</span>
+              <input
+                type="date"
+                value={toInputDate(selectedDate)}
+                onChange={(event) => {
+                  setSelectedDate(event.target.value);
+                  setSelectedId(undefined);
+                  setIsAiOpen(false);
+                }}
+              />
+            </label>
+          </div>
         </div>
       </header>
 
@@ -226,7 +335,7 @@ export default function BondBridgeDashboard({ data }: Props) {
         {!hasDataForDate ? (
           <section className="empty-state">
             <h1>{formatDate(selectedDate)} 기준 데이터가 없습니다.</h1>
-            <p>현재 CSV에 존재하는 기준일만 화면에 반영합니다. 사용 가능한 기준일: {data.availableDates.map(formatDate).join(", ")}</p>
+            <p>현재 CSV에 존재하는 조회일만 화면에 반영합니다. 사용 가능한 조회일: {data.availableDates.map(formatDate).join(", ")}</p>
           </section>
         ) : (
           <>
@@ -239,10 +348,15 @@ export default function BondBridgeDashboard({ data }: Props) {
                 </div>
               </div>
 
-              <div className="market-grid">
+              <div className="market-grid" key={`market-${selectedDate}`}>
                 <article className="market-card market-card-wide">
                   <p className="card-label">{market.summaryTitle}</p>
-                  <strong>{market.summaryLines[0]}</strong>
+                  {marketSummary?.metric && (
+                    <strong className={`market-summary-metric ${directionClass(Number(marketSummary.metric.replace("%p", "").replace("%", "")))}`}>
+                      {marketSummary.metric}
+                    </strong>
+                  )}
+                  <p className="market-summary-sentence">{marketSummary?.sentence ?? market.summaryLines[0]}</p>
                   <span>{market.summaryLines[1]}</span>
                 </article>
                 <article className="market-card">
@@ -262,7 +376,9 @@ export default function BondBridgeDashboard({ data }: Props) {
                 </article>
                 <article className="market-card">
                   <p className="card-label">장단기 금리차</p>
-                  <strong>{deltaText(market.yieldSpread, "%p")}</strong>
+                  <strong>
+                    {deltaText(market.yieldSpread, "%p")}
+                  </strong>
                   <span>10Y - 3Y</span>
                 </article>
                 <article className="market-card">
@@ -350,12 +466,16 @@ export default function BondBridgeDashboard({ data }: Props) {
                     >
                       <span className="bond-name-cell">
                         <strong>{bond.bondName}</strong>
-                        <small>{bond.tags.slice(0, 2).map((tag) => <em key={tag}>{tag}</em>)}</small>
+                        <small>
+                          {bond.tags.slice(0, 2).map((tag) => (
+                            <em className={tagToneClass(tag)} key={tag}>{tag}</em>
+                          ))}
+                        </small>
                       </span>
                       <span>{bond.issuer ?? "데이터 미확보"}</span>
                       <span>{bond.kind}</span>
                       <span>{displayRating(bond)}</span>
-                      <span className={bond.ytm >= market.treasury3y ? "positive" : "negative"}>{formatPercent(bond.ytm)}</span>
+                      <span className={ytmRelativeClass(bond, market)}>{formatPercent(bond.ytm)}</span>
                       <span>{formatPercent(bond.couponRate)}</span>
                       <span>{bond.remainingLabel}</span>
                       <span>{bond.duration === null ? "데이터 미확보" : bond.duration.toFixed(3)}</span>
@@ -366,7 +486,7 @@ export default function BondBridgeDashboard({ data }: Props) {
               </section>
 
               {selectedBond && (
-                <section className="panel detail-panel" aria-labelledby="detail-title">
+                <section className="panel detail-panel" aria-labelledby="detail-title" key={selectedBond.id}>
                   <div className="detail-heading-row">
                     <div className="section-heading compact">
                       <span>03</span>
@@ -375,13 +495,20 @@ export default function BondBridgeDashboard({ data }: Props) {
                         <p>좌측에서 채권을 선택하면 상세 정보가 표시됩니다.</p>
                       </div>
                     </div>
-                    <button className="ai-button" onClick={() => setIsAiOpen(true)} type="button">
+                    <button className="ai-button" onClick={() => openAiAnalysis(selectedBond)} type="button">
                       AI Analysis
                     </button>
                   </div>
 
                   <div className="selected-title">
                     <h3>{selectedBond.bondName}</h3>
+                    {market && (
+                      <div className="insight-judgment">
+                        {buildInvestorJudgmentLines(selectedBond, market).map((line) => (
+                          <p key={line}>{line}</p>
+                        ))}
+                      </div>
+                    )}
                     <p>
                       {selectedBond.kind === "국채"
                         ? "국채(AAA)"
@@ -419,14 +546,14 @@ export default function BondBridgeDashboard({ data }: Props) {
                             }`}
                       </dd>
                     </div>
-                    <div><dt>거래량(백만)</dt><dd>{formatMillion(selectedBond.volume)}</dd></div>
+                    <div><dt>거래량 (단위: 백만)</dt><dd>{formatMillion(selectedBond.volume)}</dd></div>
                   </dl>
 
                   <div className="chart-card">
                     <div className="chart-head">
                       <div>
                         <h4>선택 채권 가격 추이</h4>
-                        <span>현재 CSV는 단일 기준일 데이터라 시계열 연결 TODO</span>
+                        <span>선택한 채권의 최근 가격 변화를 확인할 수 있습니다.</span>
                       </div>
                       <p>Price</p>
                     </div>
@@ -455,6 +582,7 @@ export default function BondBridgeDashboard({ data }: Props) {
                         </div>
                       )}
                     </div>
+                    <p className="chart-note">{buildPriceChartNote(selectedBond)}</p>
                   </div>
 
                   <div className="chart-card">
@@ -492,6 +620,7 @@ export default function BondBridgeDashboard({ data }: Props) {
                         </div>
                       )}
                     </div>
+                    {market && <p className="chart-note">{buildRateChartNote(selectedBond, market)}</p>}
                   </div>
                 </section>
               )}
@@ -510,13 +639,30 @@ export default function BondBridgeDashboard({ data }: Props) {
               </div>
               <button aria-label="AI 분석 닫기" onClick={() => setIsAiOpen(false)} type="button">Close</button>
             </div>
-            <h3>{insight.headline}</h3>
+            <h3 className="ai-headline">{renderAiHeadline(insight.headline)}</h3>
             {insight.priorityLabel && <span className="priority-badge">{insight.priorityLabel}</span>}
+            <section className="ai-live-panel" aria-live="polite">
+              {aiState.status === "loading" && aiState.isin === selectedBond.id && (
+                <p className="ai-loading">AI 분석을 불러오는 중입니다...</p>
+              )}
+              {aiState.status === "loaded" && aiState.isin === selectedBond.id && (
+                <>
+                  <p className="ai-live-copy">{aiState.explanation}</p>
+                  <p className="ai-model">모델: {aiState.model}</p>
+                </>
+              )}
+              {aiState.status === "not-found" && aiState.isin === selectedBond.id && (
+                <p className="ai-live-copy">이 채권은 아직 AI 분석 데이터와 매칭되지 않았습니다.</p>
+              )}
+              {aiState.status === "error" && aiState.isin === selectedBond.id && (
+                <p className="ai-error">AI 분석을 불러오지 못했습니다: {aiState.message}</p>
+              )}
+            </section>
             <div className="ai-grid drawer-grid">
-              <article><strong>수익 관점</strong><p>{insight.returnView}</p></article>
-              <article><strong>금리위험 관점</strong><p>{insight.riskView}</p></article>
-              <article><strong>종합 진단</strong><p>{insight.priorityView}</p></article>
-              <article><strong>확인할 점</strong><p>{insight.checkView}</p></article>
+              <article><strong>💰 수익 관점</strong><p>{insight.returnView}</p></article>
+              <article><strong>📈 금리 위험 관점</strong><p>{insight.riskView}</p></article>
+              <article><strong>🧭 종합 진단</strong><p>{insight.priorityView}</p></article>
+              <article><strong>🔍 확인할 점</strong><p>{insight.checkView}</p></article>
             </div>
           </aside>
         </div>
