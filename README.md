@@ -41,7 +41,7 @@ Raw / Processed CSV
 | 데이터베이스 | Supabase PostgreSQL |
 | 백엔드 | FastAPI, Uvicorn, Supabase Python Client |
 | 프론트엔드 | Next.js 16, React, TypeScript, Tailwind CSS 4 |
-| AI | Gemini 또는 OpenAI |
+| AI | Gemini |
 | 배포 | Vercel, Render |
 
 ## 프로젝트 구조
